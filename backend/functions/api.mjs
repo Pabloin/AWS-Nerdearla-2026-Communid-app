@@ -220,17 +220,15 @@ async function communityRoute(event, method, parts) {
   if (method === "PUT" && parts[1] === "me" && parts[2] === "profile" && parts.length === 3) {
     const input = parseBody(event);
     const name = String(input?.name || "").trim().replace(/\s+/g, " ");
-    const email = String(input?.email || "").trim().toLowerCase();
-    if (name.length < 2 || name.length > 60 || /[\x00-\x1f\x7f]/.test(name)) return json(event, 422, { error: "guest_name_invalid" });
-    if (email.length > 254 || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return json(event, 422, { error: "guest_email_invalid" });
+    if (name.length < 2 || name.length > 80 || /[\x00-\x1f\x7f]/.test(name)) return json(event, 422, { error: "community_name_invalid" });
     const result = await database.send(new UpdateCommand({
-      TableName: tableName, Key: { pk: guest.pk, sk: guest.sk },
-      UpdateExpression: "SET #name = :name, updatedAt = :updatedAt" + (email ? ", email = :email" : " REMOVE email"),
+      TableName: tableName, Key: { pk: `EVENT#${defaultEventId}`, sk: `PROFILE#${profile.id}` },
+      UpdateExpression: "SET #name = :name, updatedAt = :updatedAt",
       ExpressionAttributeNames: { "#name": "name" },
-      ExpressionAttributeValues: { ":name": name, ":updatedAt": new Date().toISOString(), ...(email ? { ":email": email } : {}) },
+      ExpressionAttributeValues: { ":name": name, ":updatedAt": new Date().toISOString() },
       ConditionExpression: "attribute_exists(pk) AND attribute_exists(sk)", ReturnValues: "ALL_NEW"
     }));
-    return json(event, 200, { guest: guestPublic(result.Attributes) });
+    return json(event, 200, { profileId: profile.id, name: result.Attributes.name, role: profile.role, community: profile.community });
   }
   if (parts[1] === "me" && parts[2] === "location" && parts.length === 3) {
     if (method === "DELETE") {

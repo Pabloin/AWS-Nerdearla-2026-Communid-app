@@ -16,6 +16,8 @@ const cameraPreview = document.querySelector("#camera-preview");
 const capturePhoto = document.querySelector("#capture-photo");
 const joinButton = document.querySelector("#join");
 const qr = document.querySelector("#hero-qr");
+const profileEdit = document.querySelector("#profile-edit");
+const profileNameInput = document.querySelector("#profile-name");
 const status = document.querySelector("#status");
 const start = document.querySelector("#start");
 const stop = document.querySelector("#stop");
@@ -43,6 +45,8 @@ function showProfile(profile) {
   profileName = profile.name;
   registration.hidden = true;
   qr.hidden = false;
+  profileEdit.hidden = false;
+  profileNameInput.value = profile.name;
   document.querySelector("#qr-name").textContent = profile.name;
   document.querySelector("#qr-community").textContent = profile.community || "";
   const qrPhoto = document.querySelector("#qr-photo");
@@ -182,6 +186,29 @@ async function request(path, options = {}) {
   if (!response.ok) throw new Error(result.error || "HTTP " + response.status);
   return result;
 }
+
+profileEdit.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const save = profileEdit.querySelector("button");
+  save.disabled = true;
+  try {
+    const result = await request("/community/me/profile", {
+      method: "PUT",
+      body: JSON.stringify({ name: profileNameInput.value.trim() }),
+    });
+    profileName = result.name;
+    profileNameInput.value = result.name;
+    document.querySelector("#qr-name").textContent = result.name;
+    document.querySelector("#qr-image").alt = "QR de " + result.name;
+    message("Tu nombre se actualizó.");
+  } catch (error) {
+    message(error instanceof Error && error.message === "community_name_invalid"
+      ? "Escribí un nombre de 2 a 80 caracteres."
+      : "No pudimos actualizar tu nombre. Revisá la conexión.", true);
+  } finally {
+    save.disabled = false;
+  }
+});
 
 function showPublishedPosition(latitude, longitude, accuracy) {
   const latSpan = 0.0025;

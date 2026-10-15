@@ -15,7 +15,16 @@ def review(plan):
         raise ValueError('The initial plan contains no managed resources')
     for r in changes:
         address, kind, change = r['address'], r['type'], r['change']
-        if not address.startswith('module.comunid.') or change['actions'] not in [['create'], ['no-op']]:
+        recovery_resources = {
+            'module.comunid.module.api.aws_lambda_function.api': ('function_name', 'comunid-tenants-production-api'),
+            'module.comunid.module.apps.aws_cloudfront_function.section_routes': ('name', 'comunid-tenants-production-section-routes'),
+        }
+        recovery = False
+        if address in recovery_resources and change['actions'] == ['delete', 'create'] and r.get('action_reason') == 'replace_because_tainted':
+            field, name = recovery_resources[address]
+            before, after = change.get('before') or {}, change.get('after') or {}
+            recovery = before.get(field) == name and after.get(field) == name and before.get('id') == name
+        if not address.startswith('module.comunid.') or (change['actions'] not in [['create'], ['no-op']] and not recovery):
             raise ValueError(f'Refusing modification/deletion or foreign resource: {address}')
         after = change.get('after') or {}
         if kind == 'aws_cloudfront_distribution' and set(after.get('aliases', [])) != {'tenants.comunid.app', '*.comunid.app'}:
@@ -30,7 +39,7 @@ def review(plan):
         field = {'aws_s3_bucket': 'bucket', 'aws_lambda_function': 'function_name', 'aws_dynamodb_table': 'name', 'aws_iam_role': 'name', 'aws_secretsmanager_secret': 'name', 'aws_cognito_user_pool': 'name', 'aws_cognito_user_pool_client': 'name', 'aws_rekognition_collection': 'collection_id', 'aws_apigatewayv2_api': 'name', 'aws_cloudfront_function': 'name'}.get(kind)
         if field and not str(after.get(field, '')).startswith('comunid-tenants-'):
             raise ValueError(f'Refusing a resource without the tenants prefix: {address}')
-    normalized = [{'address': r['address'], 'type': r['type'], 'change': r['change']} for r in sorted(changes, key=lambda r: r['address'])]
+    normalized = [{'address': r['address'], 'type': r['type'], 'change': r['change'], 'action_reason': r.get('action_reason')} for r in sorted(changes, key=lambda r: r['address'])]
     digest = hashlib.sha256(json.dumps(normalized, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return changes, digest
 
@@ -42,7 +51,7 @@ if __name__ == '__main__':
         raise SystemExit('The plan differs from the reviewed digest; run plan-only and review it first.')
     summary = f'## Independent tenants plan\n\nSource commit: `{os.environ.get("SOURCE_SHA", "local")}`\n\nRegion: `us-east-2` · state: `comunid/tenants/terraform.tfstate`\n\nPlan SHA-256: `{digest}`\n\n| Resource | Action |\n| --- | --- |\n'
     summary += ''.join(f'| `{r["address"]}` | {", ".join(r["change"]["actions"])} |\n' for r in changes)
-    summary += '\nNo updates or deletions of existing resources are permitted.\n'
+    summary += '\nExisting resources cannot be updated or deleted. Only the two exact failed bootstrap Lambda/CloudFront-function resources may be replaced when Terraform marks them tainted.\n'
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
             f.write(summary)

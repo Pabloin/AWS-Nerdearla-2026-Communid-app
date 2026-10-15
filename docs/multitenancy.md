@@ -245,3 +245,20 @@ Las pruebas verifican accesos cruzados con el mismo evento, perfil y jugador;
 tokens de plataforma y tenant; invitados; fotos; ubicaciones; QR; colecciones
 faciales; preflight; paginación; y contextos concurrentes. AWS se simula en
 estas pruebas, sin modificar infraestructura ni datos reales.
+
+
+## Recuperación del primer apply
+
+El workflow se registró mediante el PR #1 y el usuario autorizó crear el rol OIDC
+reducido. El primer apply de Actions creó parte del stack nuevo y se detuvo por
+permisos dependientes que AWS exige: lectura de code-signing de Lambda,
+DescribeFunction de CloudFront, etiquetado ACM/Cognito y el endpoint de tags de
+API Gateway v2. No modificó Argentina ni llegó a publicar la plataforma.
+
+Terraform marcó como tainted la Lambda `comunid-tenants-production-api` y la
+función `comunid-tenants-production-section-routes`, creadas por esa ejecución.
+El validador contempla su recreación únicamente con esos nombres e IDs exactos
+y el motivo `replace_because_tainted`; sigue rechazando eliminaciones simples,
+updates y reemplazos de otros recursos. La ampliación mínima de permisos y esa
+recuperación requieren autorización explícita antes de continuar. Los datos
+actuales de Argentina no participan en este proceso.

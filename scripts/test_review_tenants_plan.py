@@ -21,6 +21,20 @@ class PlanReviewTests(unittest.TestCase):
             p = self.plan(); p['resource_changes'][0]['change']['actions'] = actions
             with self.assertRaises(ValueError): module.review(p)
 
+    def test_recovers_only_the_exact_failed_bootstrap_resources(self):
+        p = self.plan()
+        r = p['resource_changes'][0]
+        r['address'] = 'module.comunid.module.api.aws_lambda_function.api'
+        r['action_reason'] = 'replace_because_tainted'
+        r['change']['actions'] = ['delete', 'create']
+        r['change']['before'] = {'function_name': 'comunid-tenants-production-api', 'id': 'comunid-tenants-production-api'}
+        module.review(p)
+        r['action_reason'] = 'replace_because_cannot_update'
+        with self.assertRaises(ValueError): module.review(p)
+        r['action_reason'] = 'replace_because_tainted'
+        r['change']['before']['id'] = 'comunid-production-api'
+        with self.assertRaises(ValueError): module.review(p)
+
     def test_rejects_argentina_resources_domains_and_region(self):
         for p in [self.plan(after={'function_name': 'comunid-production-api'}), self.plan('cloudflare_dns_record', {'name': 'comunid.app'}), self.plan('cloudflare_dns_record', {'name': 'mobile.comunid.app'}), self.plan('aws_cloudfront_distribution', {'aliases': ['comunid.app', '*.comunid.app']})]:
             with self.assertRaises(ValueError): module.review(p)

@@ -574,7 +574,6 @@ function App() {
     );
   return (
     <div className="app-shell">
-      {inApp && view !== "profile" && <button className="profile-shortcut" type="button" onClick={() => go("profile")} aria-label="Abrir mi perfil"><UserRound size={19} /><span>Mi perfil</span></button>}
       {view === "welcome" && (
         <main className="intro-screen">
           <div className="intro-top">
@@ -796,9 +795,12 @@ function App() {
             <Brand />
           </button>
           {session || guest ? (
-            <button className="topbar-disconnect" type="button" onClick={() => void endSession()}>
-              <LogOut size={16} /> Desconectar
-            </button>
+            <div className="topbar-actions">
+              {view !== "profile" && <button className="profile-shortcut" type="button" onClick={() => go("profile")} aria-label="Abrir mi perfil"><UserRound size={19} /><span>Mi perfil</span></button>}
+              <button className="topbar-disconnect" type="button" onClick={() => void endSession()} aria-label="Desconectar" title="Desconectar">
+                <LogOut size={18} />
+              </button>
+            </div>
           ) : view === "scan" || view === "selfie" ? (
             <span className="icon-button top-action">
               <Camera size={20} />
@@ -817,12 +819,12 @@ function App() {
             Explorá <em>el evento</em>
           </h1>
           <p className="page-subtitle">
-            Conocé a los cuatro Heroes destacados y mirá quiénes comparten su
+            Conocé a los Heroes de la comunidad y mirá quiénes comparten su
             ubicación en vivo.
           </p>
           <section className="featured-heroes" aria-label="Heroes destacados">
             <h2>Conocé a los Heroes</h2>
-            <p>Elegí a uno para ver su perfil.</p>
+            <p>{tenantId && !profiles.some((profile) => profile.role === "hero") ? "Todavía no hay Heroes publicados en esta comunidad." : "Elegí a uno para ver su perfil."}</p>
             <div className="featured-hero-list">
               {(tenantId ? profiles.filter((profile) => profile.role === "hero") : featuredHeroProfiles).map((featured) => {
                 const profile = profiles.find((item) => item.id === featured.id) || featured;

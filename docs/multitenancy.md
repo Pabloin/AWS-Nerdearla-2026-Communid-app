@@ -1,6 +1,6 @@
 # Experiencias, tenants y subdominios
 
-La rama `feat/multitenant` prepara un stack independiente
+La rama `feat/multitenant` implementa un stack independiente
 (`terraform/environments/tenants`) con un panel en `tenants.comunid.app` y una
 aplicación por experiencia.
 
@@ -29,7 +29,8 @@ Plataforma nueva · stack tenants · us-east-2
 └── reinvent.comunid.app      → experiencia re:Invent
 ```
 
-Los subdominios nuevos son destinos previstos, no despliegues ya publicados.
+`tenants.comunid.app` y `argentina.comunid.app` están publicados.
+Paraguay y re:Invent son experiencias previstas; todavía no están dadas de alta.
 La Argentina nueva empieza con sus propios participantes, perfiles, pasaportes
 y encuentros. No se copian datos ni cuentas desde Argentina actual, no se
 redirigen sus dominios y no se reemplazan sus QR. Una eventual migración o
@@ -60,21 +61,22 @@ el alta y listado de tenants y un token de administración por tenant.
 
 - Preparado en código: separación por tenant, panel básico de alta/listado,
   enlaces por subdominio y configuración del stack independiente.
-- Pendiente: crear y cargar el tenant Argentina, separar la variante de Heroes
+- Publicado: panel y tenant Argentina vacío en el stack nuevo.
+- Pendiente: cargar participantes, separar la variante de Heroes
   y desarrollar la variante de países y su mapa. La aplicación preparada aún
   conserva lógica y pantallas de la experiencia original; no es un motor
   configurable de experiencias.
 - Despliegue acordado: workflow exclusivo de GitHub Actions para tenants,
   usando el secreto Cloudflare existente y OIDC para AWS, con pruebas y revisión
-  del plan antes de aplicar. El workflow está preparado en `.github/workflows/tenants.yml`; el despliegue todavía no se ejecutó.
+  del plan antes de aplicar. El workflow está registrado en `.github/workflows/tenants.yml`; las ejecuciones y sus resultados quedan en Actions.
 
-El siguiente hito es validar Argentina como primer tenant del stack nuevo,
-manteniendo Argentina actual operativa, y después incorporar la variante de países.
+El siguiente hito es probar el flujo completo con participantes de Argentina
+nueva y después incorporar la variante de países. Argentina actual sigue operativa.
 
 ## Uso
 
-Flujo del panel básico una vez desplegado. Para la primera experiencia se usará
-el identificador `argentina`; `cordoba` es solo un ejemplo adicional de tenant.
+Flujo del panel publicado. La primera experiencia usa el identificador
+`argentina`; `cordoba` es solo un ejemplo adicional de tenant.
 
 1. Entrar al panel con el token de administración de la plataforma nueva
    (Secrets Manager, `comunid-tenants-production-admin-token`, propio del nuevo stack).
@@ -171,7 +173,7 @@ cuenta y revisar la estrategia DNS/certificados.
 
 El camino de despliegue acordado es GitHub Actions, con un workflow y un
 environment propios de tenants para registrar commit, ejecución, plan y resultado.
-Se usará `COMUNID_CLOUDFLARE_API_TOKEN` dentro de Actions, sin extraer su valor
+Se usa `COMUNID_CLOUDFLARE_API_TOKEN` dentro de Actions, sin extraer su valor
 a una terminal local. El workflow de Argentina conserva su destino actual.
 El workflow está preparado en `.github/workflows/tenants.yml`. Recibe el SHA
 exacto del código de `feat/multitenant`. La primera ejecución usa `deploy=false`
@@ -187,11 +189,11 @@ repositorio y al environment `tenants`. El stack nuevo desactiva los roles CICD
 administrativos generales y solo crea el rol de ejecución de su Lambda. La
 política de bootstrap contempla recursos nuevos, estado exclusivo, certificados y
 distribución nuevos, y deniega explícitamente cambios en la distribución,
-función y certificado de Argentina. Su creación requiere autorización y aún
-no se ejecutó; la revisión automática rechazó una propuesta anterior más amplia.
+función y certificado de Argentina. El rol reducido fue creado con autorización
+explícita; no se reutilizaron los roles de despliegue de Argentina.
 
-Los scripts locales ya preparados quedan como herramienta manual alternativa;
-no representan un despliegue ya ejecutado. Para preparar un plan local se
+Los scripts locales quedan como herramienta manual alternativa. El camino
+usado para publicar es Actions. Para preparar un plan local se
 requieren las variables Cloudflare y GitHub indicadas en README:
 
 ```bash
@@ -216,16 +218,18 @@ bucket nuevo, usando su API y Cognito. Verifica los nombres de Lambda y bucket
 antes de publicar. Está preparado para el alta inicial; actualizaciones posteriores
 requieren un proceso de revisión que permita cambios en los recursos propios.
 No ejecutar `deploy-production.sh` ni el workflow de Argentina para esta versión.
-Configurar un token aleatorio en `comunid-tenants-production-admin-token` después
-del alta; el secreto anterior de Argentina no sirve para este panel.
+El alta inicial se completó con `scripts/initialize-argentina.py`, que genera
+el token de plataforma y guarda el token de administración de Argentina nueva
+en Secrets Manager. No imprime credenciales y es idempotente. El secreto
+anterior de Argentina no sirve para este panel.
 
 El backend responde OPTIONS y valida los orígenes existentes y subdominios HTTPS
 de un nivel. API Gateway delega CORS a Lambda. Las rutas Cognito de encuentros
 conservan su authorizer JWT dentro de la API nueva.
 
-Estos cambios son locales: no se ejecutó un plan contra AWS, no se aplicó
-infraestructura ni se publicó DNS. Después del despliegue hacen falta pruebas
-reales con dos comunidades y comprobación de los dominios originales.
+Las pruebas automáticas verifican dos comunidades con identificadores de datos
+compartidos para detectar accesos cruzados. La comprobación del despliegue incluye
+la API nueva, los subdominios y la distribución original de Argentina.
 
 ## Desarrollo y pruebas
 
@@ -260,5 +264,48 @@ función `comunid-tenants-production-section-routes`, creadas por esa ejecución
 El validador contempla su recreación únicamente con esos nombres e IDs exactos
 y el motivo `replace_because_tainted`; sigue rechazando eliminaciones simples,
 updates y reemplazos de otros recursos. La ampliación mínima de permisos y esa
-recuperación requieren autorización explícita antes de continuar. Los datos
+recuperación fueron autorizadas explícitamente y se ejecutaron. Los datos
 actuales de Argentina no participan en este proceso.
+
+AWS exigió además `apigateway:TagResource` para el stage de la API nueva
+`p152jvhrf7` y `cloudfront:CreateDistribution`/`TagResource` como dependencias
+de crear la distribución con tags. Se incorporaron en el commit `dd1e9b4`,
+limitando el etiquetado de API al ID nuevo y la distribución a
+`Project=comunid-tenants`. Se agregó una denegación explícita de etiquetado
+sobre la distribución original de Argentina.
+
+
+## Publicación verificada · 15 de octubre de 2026
+
+- Código desplegado: `dd1e9b48e6994a20b77e05b34fd444befabf213f`, rama `feat/multitenant`.
+- [Plan revisado](https://github.com/Pabloin/AWS-Nerdearla-2026-Communid-app/actions/runs/38811937766): cinco altas pendientes, cero modificaciones y cero eliminaciones.
+- [Despliegue exitoso](https://github.com/Pabloin/AWS-Nerdearla-2026-Communid-app/actions/runs/38816858988): infraestructura y frontends publicados desde Actions.
+- Panel: <https://tenants.comunid.app>.
+- Argentina nueva: <https://argentina.comunid.app>; administración: <https://argentina.comunid.app/admin/>; alta de perfiles: <https://argentina.comunid.app/somos.html>.
+- API nueva: `https://p152jvhrf7.execute-api.us-east-2.amazonaws.com`.
+- Distribución nueva: `E166FHNMUYSS18` (`d39uzcykti94uv.cloudfront.net`).
+
+Las credenciales se generaron en el alta inicial desde el script local, después
+de finalizar Actions; infraestructura y publicación se ejecutaron en Actions.
+Están en AWS Secrets Manager, cuenta `442809140287`, región `us-east-2`:
+
+| Acceso | Nombre del secreto |
+| --- | --- |
+| Panel de plataforma | `comunid-tenants-production-admin-token` |
+| Administración de Argentina nueva | `comunid-tenants-production-argentina-admin-token` |
+
+Para entrar al panel o al administrador, recuperar el valor del secreto
+correspondiente desde la consola AWS con una identidad autorizada. No guardarlo
+en GitHub, URLs, documentos o capturas. El workflow OIDC no puede leer estos valores.
+
+Verificación realizada: 38 pruebas de aplicación, siete pruebas del validador de
+planes, builds, API saludable, panel y entrada de Argentina visibles en navegador.
+El alta comprobó Argentina sin perfiles, token de Argentina válido dentro de su
+tenant y rechazado por el registro global, y tenant inexistente con HTTP 404.
+No se crearon participantes de prueba ni se copiaron datos anteriores.
+
+La distribución original `E2DYSZ3ARR9EVF` conservó su ETag
+`E2EUQ1WTGCTBG2` y todos sus aliases. Su API respondió saludable con
+`eventId=nerdearla-2026`. Los dominios originales se comprobaron por HTTPS.
+La base sigue lista para la experiencia de personas; la variante de países y
+el mapa mundial continúan pendientes de implementación.

@@ -49,7 +49,7 @@ resource "aws_lambda_function" "api" {
   source_code_hash = filebase64sha256(var.lambda_zip_path)
   role             = aws_iam_role.lambda.arn
   handler          = "index.handler"
-  runtime          = "nodejs20.x"
+  runtime          = var.tenant_domain != "" ? "nodejs22.x" : "nodejs20.x"
   timeout          = 30
   memory_size      = 256
   environment {

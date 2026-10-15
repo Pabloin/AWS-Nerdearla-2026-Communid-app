@@ -20,9 +20,12 @@ def review(plan):
         after = change.get('after') or {}
         if kind == 'aws_cloudfront_distribution' and set(after.get('aliases', [])) != {'tenants.comunid.app', '*.comunid.app'}:
             raise ValueError('The new distribution must not claim Argentina aliases')
+        if kind == 'aws_acm_certificate' and (after.get('domain_name') != 'tenants.comunid.app' or set(after.get('subject_alternative_names', [])) != {'*.comunid.app'}):
+            raise ValueError('Refusing a certificate outside the new tenant domains')
         if kind == 'cloudflare_dns_record':
             name = after.get('name', '').rstrip('.')
-            if name not in ['tenants.comunid.app', '*.comunid.app'] and not (name.startswith('_') and name.endswith('.tenants.comunid.app')):
+            pending_portal_validation = (not name and address.endswith('cloudflare_dns_record.validation["tenants.comunid.app"]') and change.get('after_unknown', {}).get('name') is True)
+            if not pending_portal_validation and name not in ['tenants.comunid.app', '*.comunid.app'] and not (name.startswith('_') and name.endswith('.tenants.comunid.app')):
                 raise ValueError(f'Refusing a DNS record outside the new tenant domains: {name}')
         field = {'aws_s3_bucket': 'bucket', 'aws_lambda_function': 'function_name', 'aws_dynamodb_table': 'name', 'aws_iam_role': 'name', 'aws_secretsmanager_secret': 'name', 'aws_cognito_user_pool': 'name', 'aws_cognito_user_pool_client': 'name', 'aws_rekognition_collection': 'collection_id', 'aws_apigatewayv2_api': 'name', 'aws_cloudfront_function': 'name'}.get(kind)
         if field and not str(after.get(field, '')).startswith('comunid-tenants-'):

@@ -27,6 +27,15 @@ class PlanReviewTests(unittest.TestCase):
         p = self.plan(); p['variables']['aws_region']['value'] = 'us-east-1'
         with self.assertRaises(ValueError): module.review(p)
 
+    def test_accepts_pending_acm_validation_only_for_the_portal(self):
+        p = self.plan('cloudflare_dns_record', {'type': 'CNAME'})
+        resource = p['resource_changes'][0]
+        resource['address'] = 'module.comunid.module.apps.cloudflare_dns_record.validation["tenants.comunid.app"]'
+        resource['change']['after_unknown'] = {'name': True}
+        module.review(p)
+        resource['address'] = 'module.comunid.module.apps.cloudflare_dns_record.validation["comunid.app"]'
+        with self.assertRaises(ValueError): module.review(p)
+
     def test_accepts_only_new_dns_names_and_distribution_aliases(self):
         for name in ['tenants.comunid.app', '*.comunid.app', '_abc.tenants.comunid.app']:
             module.review(self.plan('cloudflare_dns_record', {'name': name}))

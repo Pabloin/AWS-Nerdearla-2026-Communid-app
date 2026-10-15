@@ -20,7 +20,7 @@ def review(plan):
         after = change.get('after') or {}
         if kind == 'aws_cloudfront_distribution' and set(after.get('aliases', [])) != {'tenants.comunid.app', '*.comunid.app'}:
             raise ValueError('The new distribution must not claim Argentina aliases')
-        if kind == 'aws_acm_certificate' and (after.get('domain_name') != 'tenants.comunid.app' or set(after.get('subject_alternative_names', [])) != {'*.comunid.app'}):
+        if kind == 'aws_acm_certificate' and (after.get('domain_name') != 'tenants.comunid.app' or set(after.get('subject_alternative_names', [])) - {'tenants.comunid.app'} != {'*.comunid.app'}):
             raise ValueError('Refusing a certificate outside the new tenant domains')
         if kind == 'cloudflare_dns_record':
             name = after.get('name', '').rstrip('.')

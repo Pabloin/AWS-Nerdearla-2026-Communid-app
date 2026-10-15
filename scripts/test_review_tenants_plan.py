@@ -27,6 +27,12 @@ class PlanReviewTests(unittest.TestCase):
         p = self.plan(); p['variables']['aws_region']['value'] = 'us-east-1'
         with self.assertRaises(ValueError): module.review(p)
 
+    def test_accepts_provider_certificate_sans_and_rejects_argentina_root(self):
+        p = self.plan('aws_acm_certificate', {'domain_name': 'tenants.comunid.app', 'subject_alternative_names': ['*.comunid.app', 'tenants.comunid.app']})
+        module.review(p)
+        p['resource_changes'][0]['change']['after']['subject_alternative_names'].append('comunid.app')
+        with self.assertRaises(ValueError): module.review(p)
+
     def test_accepts_pending_acm_validation_only_for_the_portal(self):
         p = self.plan('cloudflare_dns_record', {'type': 'CNAME'})
         resource = p['resource_changes'][0]

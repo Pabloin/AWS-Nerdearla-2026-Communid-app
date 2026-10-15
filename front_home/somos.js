@@ -1,13 +1,26 @@
+import { tenantApiBase, tenantStorageKey, tenantId } from "../shared/tenant.js";
 import "./hero.css";
 
-const apiBase = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-const tokenKey = "comunid:community-access";
-const profileKey = "comunid:community-profile";
-const oldTokenKey = "comunid:hero-access";
-const oldProfileKey = "comunid:hero-profile";
+const apiBase = tenantApiBase(import.meta.env.VITE_API_BASE_URL);
+const tokenKey = tenantStorageKey("comunid:community-access");
+const profileKey = tenantStorageKey("comunid:community-profile");
+const oldTokenKey = tenantStorageKey("comunid:hero-access");
+const oldProfileKey = tenantStorageKey("comunid:hero-profile");
 const registration = document.querySelector("#registration");
 const nameInput = document.querySelector("#name");
-const communityInput = document.querySelector("#community");
+let communityInput = document.querySelector("#community");
+if (tenantId) {
+  const input = document.createElement("input");
+  input.id = "community"; input.name = "community"; input.required = true; input.maxLength = 120; input.value = tenantId;
+  communityInput.replaceWith(input); communityInput = input;
+  document.querySelector("header span").textContent = `SOMOS · ${tenantId.toUpperCase()}`;
+  fetch(`${apiBase}/health`).then((response) => response.ok ? response.json() : Promise.reject()).then((data) => {
+    if (data.tenant?.name) {
+      document.querySelector("header span").textContent = `SOMOS · ${data.tenant.name.toUpperCase()}`;
+      if (communityInput.value === tenantId) communityInput.value = data.tenant.name;
+    }
+  }).catch(() => undefined);
+}
 const roleInput = document.querySelector("#role");
 const photoInput = document.querySelector("#photo");
 const photoPreview = document.querySelector("#photo-preview");
@@ -16,14 +29,16 @@ const cameraPreview = document.querySelector("#camera-preview");
 const capturePhoto = document.querySelector("#capture-photo");
 const joinButton = document.querySelector("#join");
 const qr = document.querySelector("#hero-qr");
+const profileEdit = document.querySelector("#profile-edit");
+const profileNameInput = document.querySelector("#profile-name");
 const status = document.querySelector("#status");
 const start = document.querySelector("#start");
 const stop = document.querySelector("#stop");
 const map = document.querySelector("#hero-map");
 const mapFrame = document.querySelector("#map-frame");
 const mapAccuracy = document.querySelector("#map-accuracy");
-let token = sessionStorage.getItem(tokenKey) || sessionStorage.getItem(oldTokenKey) || "";
-let profileId = sessionStorage.getItem(profileKey) || sessionStorage.getItem(oldProfileKey) || "";
+let token = sessionStorage.getItem(tokenKey) || (!tenantId && sessionStorage.getItem(oldTokenKey)) || "";
+let profileId = sessionStorage.getItem(profileKey) || (!tenantId && sessionStorage.getItem(oldProfileKey)) || "";
 let profileName = "";
 let watchId = null;
 let heartbeat = null;
@@ -43,6 +58,8 @@ function showProfile(profile) {
   profileName = profile.name;
   registration.hidden = true;
   qr.hidden = false;
+  profileEdit.hidden = false;
+  profileNameInput.value = profile.name;
   document.querySelector("#qr-name").textContent = profile.name;
   document.querySelector("#qr-community").textContent = profile.community || "";
   const qrPhoto = document.querySelector("#qr-photo");
@@ -182,6 +199,29 @@ async function request(path, options = {}) {
   if (!response.ok) throw new Error(result.error || "HTTP " + response.status);
   return result;
 }
+
+profileEdit.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const save = profileEdit.querySelector("button");
+  save.disabled = true;
+  try {
+    const result = await request("/community/me/profile", {
+      method: "PUT",
+      body: JSON.stringify({ name: profileNameInput.value.trim() }),
+    });
+    profileName = result.name;
+    profileNameInput.value = result.name;
+    document.querySelector("#qr-name").textContent = result.name;
+    document.querySelector("#qr-image").alt = "QR de " + result.name;
+    message("Tu nombre se actualizó.");
+  } catch (error) {
+    message(error instanceof Error && error.message === "community_name_invalid"
+      ? "Escribí un nombre de 2 a 80 caracteres."
+      : "No pudimos actualizar tu nombre. Revisá la conexión.", true);
+  } finally {
+    save.disabled = false;
+  }
+});
 
 function showPublishedPosition(latitude, longitude, accuracy) {
   const latSpan = 0.0025;

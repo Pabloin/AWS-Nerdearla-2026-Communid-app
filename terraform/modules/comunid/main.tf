@@ -27,14 +27,20 @@ module "storage" {
 }
 
 module "apps" {
-  source             = "../apps"
-  project_name       = var.project_name
-  environment        = var.environment
-  domain_name        = var.domain_name
-  additional_domains = var.additional_domains
-  cloudflare_zone_id = var.cloudflare_zone_id
-  web_bucket_name    = "${local.name}-web-${data.aws_caller_identity.current.account_id}"
-  tags               = local.tags
+  providers = {
+    aws             = aws
+    aws.certificate = aws.certificate
+  }
+  source                        = "../apps"
+  project_name                  = var.project_name
+  environment                   = var.environment
+  domain_name                   = var.domain_name
+  additional_domains            = var.additional_domains
+  tenant_domain                 = var.tenant_domain
+  unmanaged_certificate_domains = var.unmanaged_certificate_domains
+  cloudflare_zone_id            = var.cloudflare_zone_id
+  web_bucket_name               = "${local.name}-web-${data.aws_caller_identity.current.account_id}"
+  tags                          = local.tags
 }
 
 module "api" {
@@ -47,7 +53,8 @@ module "api" {
   media_bucket_name = module.storage.media_bucket_name
   media_bucket_arn  = module.storage.media_bucket_arn
   public_app_url    = "https://${lookup(var.additional_domains, "mobile", var.domain_name)}"
-  allowed_origins   = concat([for domain in concat([var.domain_name], values(var.additional_domains)) : "https://${domain}"], var.environment == "staging" ? ["http://127.0.0.1:5190", "http://127.0.0.1:5192"] : [])
+  allowed_origins   = concat([for domain in concat([var.domain_name], [for domain in values(var.additional_domains) : domain if !strcontains(domain, "*")]) : "https://${domain}"], var.environment == "staging" ? ["http://127.0.0.1:5190", "http://127.0.0.1:5192"] : [])
+  tenant_domain     = var.tenant_domain != "" ? var.tenant_domain : contains(values(var.additional_domains), "*.${var.domain_name}") ? var.domain_name : ""
   default_event_id  = var.default_event_id
   cognito_issuer    = module.auth.issuer
   cognito_client_id = module.auth.client_id

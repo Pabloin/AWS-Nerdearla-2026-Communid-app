@@ -1,5 +1,9 @@
 module "comunid" {
-  source      = "../../modules/comunid"
+  source = "../../modules/comunid"
+  providers = {
+    aws             = aws
+    aws.certificate = aws.us_east_1
+  }
   environment = "production"
   domain_name = "comunid.app"
   additional_domains = {

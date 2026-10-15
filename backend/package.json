@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "package": "mkdir -p dist && esbuild functions/api.mjs --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs && node -e \"if (typeof require('./dist/index.cjs').handler !== 'function') process.exit(1)\" && cd dist && rm -f api.zip && zip -q api.zip index.cjs"
+    "package": "mkdir -p dist && esbuild functions/api.mjs --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs && node -e \"if (typeof require('./dist/index.cjs').handler !== 'function') process.exit(1)\" && cd dist && rm -f api.zip && TZ=UTC touch -t 202001010000 index.cjs && TZ=UTC zip -X -q api.zip index.cjs"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.658.1",

@@ -11,3 +11,8 @@ variable "default_event_id" { type = string }
 variable "cognito_issuer" { type = string }
 variable "cognito_client_id" { type = string }
 variable "tags" { type = map(string) }
+
+variable "tenant_domain" {
+  type    = string
+  default = ""
+}

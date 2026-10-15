@@ -20,6 +20,7 @@ resource "aws_cloudfront_origin_access_control" "web" {
 }
 
 resource "aws_acm_certificate" "web" {
+  provider                  = aws.certificate
   domain_name               = var.domain_name
   subject_alternative_names = values(var.additional_domains)
   validation_method         = "DNS"
@@ -35,7 +36,7 @@ resource "cloudflare_dns_record" "validation" {
       name   = option.resource_record_name
       record = option.resource_record_value
       type   = option.resource_record_type
-    }
+    } if option.domain_name != "*.${var.domain_name}" && !contains(var.unmanaged_certificate_domains, option.domain_name)
   }
   zone_id = var.cloudflare_zone_id
   name    = trimsuffix(each.value.name, ".")
@@ -46,8 +47,9 @@ resource "cloudflare_dns_record" "validation" {
 }
 
 resource "aws_acm_certificate_validation" "web" {
+  provider                = aws.certificate
   certificate_arn         = aws_acm_certificate.web.arn
-  validation_record_fqdns = [for record in cloudflare_dns_record.validation : record.name]
+  validation_record_fqdns = distinct([for option in aws_acm_certificate.web.domain_validation_options : trimsuffix(option.resource_record_name, ".")])
 }
 
 resource "aws_cloudfront_function" "section_routes" {
@@ -56,13 +58,15 @@ resource "aws_cloudfront_function" "section_routes" {
   comment = "Serve the app and admin entry points from their S3 prefixes"
   publish = true
   code = templatefile("${path.module}/route-rewrite.js", {
-    mobile_domain = lookup(var.additional_domains, "mobile", "")
-    app_domain    = lookup(var.additional_domains, "app", "")
-    admin_domain  = lookup(var.additional_domains, "admin", "")
-    hero_domain   = lookup(var.additional_domains, "hero", "")
-    somos_domain  = lookup(var.additional_domains, "somos", "")
-    www_domain    = lookup(var.additional_domains, "www", "")
-    root_domain   = var.domain_name
+    mobile_domain  = lookup(var.additional_domains, "mobile", "")
+    app_domain     = lookup(var.additional_domains, "app", "")
+    admin_domain   = lookup(var.additional_domains, "admin", "")
+    hero_domain    = lookup(var.additional_domains, "hero", "")
+    somos_domain   = lookup(var.additional_domains, "somos", "")
+    tenant_domain  = var.tenant_domain != "" ? var.tenant_domain : contains(values(var.additional_domains), "*.${var.domain_name}") ? var.domain_name : ""
+    tenants_domain = lookup(var.additional_domains, "tenants", var.tenant_domain != "" ? var.domain_name : "")
+    www_domain     = lookup(var.additional_domains, "www", "")
+    root_domain    = var.domain_name
   })
 }
 

@@ -1,3 +1,4 @@
+import { tenantStorageKey } from "../../shared/tenant";
 export type GuestProfile = {
   id: string;
   name: string;
@@ -11,7 +12,7 @@ export type GuestSession = {
   token: string;
 };
 
-const storageKey = "comunid:guest-session";
+const storageKey = tenantStorageKey("comunid:guest-session");
 
 export function readGuestSession(): GuestSession | null {
   try {

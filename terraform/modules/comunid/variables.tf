@@ -22,3 +22,13 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "tenant_domain" {
+  type    = string
+  default = ""
+}
+variable "unmanaged_certificate_domains" {
+  description = "Certificate domains whose ACM validation CNAME is already managed by another stack. Never import or overwrite those records here."
+  type        = set(string)
+  default     = []
+}

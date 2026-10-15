@@ -1,3 +1,4 @@
+import { tenantId, tenantStorageKey, tenantApiBase, tenantProfileUrl } from "../../shared/tenant";
 import React, { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import ReactDOM from "react-dom/client";
 import {
@@ -66,11 +67,8 @@ type View =
   | "selfie"
   | "success"
   | "passport";
-const encounterKey = "comunid:encounters";
-const apiBaseUrl = String(import.meta.env.VITE_API_BASE_URL ?? "").replace(
-  /\/$/,
-  "",
-);
+const encounterKey = tenantStorageKey("comunid:encounters");
+const apiBaseUrl = tenantApiBase(import.meta.env.VITE_API_BASE_URL);
 type LiveHero = { profileId: string; name: string; latitude: number; longitude: number; accuracy: number; updatedAt: string };
 const featuredHeroProfiles: BuilderProfile[] = [
   { id: "matias-kreder", name: "Matias Kreder", role: "hero", title: "AWS Hero", city: "", community: "", superpower: "", askMeAbout: "", story: "", color: "#C8FF3D" },
@@ -104,7 +102,7 @@ function Avatar({
   profile: BuilderProfile;
   large?: boolean;
 }) {
-  const photoUrl = heroPhotoUrl(profile.id) || (profile.id.startsWith("member-") ? apiBaseUrl + "/profiles/" + profile.id + "/photo" : null);
+  const photoUrl = (!tenantId ? heroPhotoUrl(profile.id) : null) || (profile.id.startsWith("member-") ? apiBaseUrl + "/profiles/" + profile.id + "/photo" : null);
   return (
     <span
       className={`avatar ${large ? "avatar-large" : ""} ${photoUrl ? "avatar-photo" : ""} ${photoUrl ? `avatar-${profile.id}` : ""}`}
@@ -133,6 +131,15 @@ function Brand() {
 }
 
 function App() {
+  const [eventName, setEventName] = useState(tenantId || "Nerdearla 2026");
+  useEffect(() => {
+    if (!tenantId || !apiBaseUrl) return;
+    let active = true;
+    fetch(`${apiBaseUrl}/health`).then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data) => { if (active && data.tenant?.name) setEventName(data.tenant.name); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   const [view, setView] = useState<View>("welcome");
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authReady, setAuthReady] = useState(false);
@@ -151,7 +158,7 @@ function App() {
   const [contactBusy, setContactBusy] = useState(false);
   const [contactMessage, setContactMessage] = useState("");
   const [authMessage, setAuthMessage] = useState("");
-  const [profiles, setProfiles] = useState<BuilderProfile[]>(demoProfiles);
+  const [profiles, setProfiles] = useState<BuilderProfile[]>(tenantId ? [] : demoProfiles);
   const [liveHeroes, setLiveHeroes] = useState<LiveHero[]>([]);
   const [mapHeroId, setMapHeroId] = useState<string | null>(null);
   const [communityOpen, setCommunityOpen] = useState(false);
@@ -291,7 +298,7 @@ function App() {
     const refresh = () => fetch(apiBaseUrl + "/profiles")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((data) => {
-        if (active && Array.isArray(data.profiles) && data.profiles.length)
+        if (active && Array.isArray(data.profiles))
           setProfiles(data.profiles);
       })
       .catch(() => undefined);
@@ -312,7 +319,7 @@ function App() {
   }, []);
   useEffect(() => {
     if (deepLinkHandled.current || (!session && !guest)) return;
-    const id = profileIdFromQr(window.location.href);
+    const id = profileIdFromQr(window.location.href, tenantId);
     const profile = profiles.find((item) => item.id === id);
     if (profile) {
       deepLinkHandled.current = true;
@@ -447,7 +454,7 @@ function App() {
     }
   }
   function badgeFound(payload: string) {
-    const id = profileIdFromQr(payload);
+    const id = profileIdFromQr(payload, tenantId);
     const profile = profiles.find((item) => item.id === id);
     if (!profile) throw new Error("Este badge no pertenece al evento actual.");
     stopCamera();
@@ -573,7 +580,7 @@ function App() {
           <div className="intro-top">
             <Brand />
             <span className="event-pill">
-              <MapPin size={14} /> Nerdearla 2026
+              <MapPin size={14} /> {eventName}
             </span>
           </div>
           <div className="intro-art" aria-hidden="true">
@@ -798,14 +805,14 @@ function App() {
             </span>
           ) : (
             <span className="event-pill">
-              <MapPin size={13} /> Nerdearla 2026
+              <MapPin size={13} /> {eventName}
             </span>
           )}
         </header>
       )}
       {view === "discover" && (
         <main className="page discover-page">
-          <span className="eyebrow">{guest && !session ? `HOLA, ${guest.guest.name.toUpperCase()}` : "NERDEARLA 2026"}</span>
+          <span className="eyebrow">{guest && !session ? `HOLA, ${guest.guest.name.toUpperCase()}` : eventName.toUpperCase()}</span>
           <h1>
             Explorá <em>el evento</em>
           </h1>
@@ -817,9 +824,9 @@ function App() {
             <h2>Conocé a los Heroes</h2>
             <p>Elegí a uno para ver su perfil.</p>
             <div className="featured-hero-list">
-              {featuredHeroProfiles.map((featured) => {
+              {(tenantId ? profiles.filter((profile) => profile.role === "hero") : featuredHeroProfiles).map((featured) => {
                 const profile = profiles.find((item) => item.id === featured.id) || featured;
-                const photo = heroPhotoUrl(profile.id);
+                const photo = tenantId ? null : heroPhotoUrl(profile.id);
                 return (
                   <button key={profile.id} className="featured-hero-card" type="button" onClick={() => setSelected(profile)}>
                     {photo ? <img src={photo} alt="" loading="lazy" /> : <Avatar profile={profile} />}
@@ -843,7 +850,7 @@ function App() {
             <p>Solo aparecen quienes activaron voluntariamente su ubicación. Puede variar dentro del edificio.</p>
             {liveHeroes.length === 0 ? <p className="community-empty">Todavía no hay personas compartiendo su ubicación.</p> : liveHeroes.map((hero) => {
               const profile = profiles.find((item) => item.id === hero.profileId);
-              const photo = heroPhotoUrl(hero.profileId) || (hero.profileId.startsWith("member-") ? apiBaseUrl + "/profiles/" + hero.profileId + "/photo" : null);
+              const photo = (!tenantId ? heroPhotoUrl(hero.profileId) : null) || (hero.profileId.startsWith("member-") ? apiBaseUrl + "/profiles/" + hero.profileId + "/photo" : null);
               return <button key={hero.profileId} className="live-hero" type="button" onClick={() => { setMapDismissed(false); setMapHeroId(hero.profileId); }} aria-expanded={mapHeroId === hero.profileId}>
                 {photo ? <img className="live-hero-photo" src={photo} alt="" loading="lazy" /> : <span className="live-hero-pulse" aria-hidden="true" />}
                 <span><strong>{hero.name}</strong><small>{profile?.community || profile?.title || "Hero"} · precisión ±{Math.round(hero.accuracy)} m · Ver mapa</small></span>
@@ -877,7 +884,7 @@ function App() {
         <main className="page passport-page">
           <div className="page-center">
             <h1>Mi pasaporte</h1>
-            <h2>Nerdearla 2026</h2>
+            <h2>{eventName}</h2>
             <p>Coleccioná encuentros. Conectá con la comunidad.</p>
           </div>
           <div className="passport-ticket">
@@ -893,7 +900,7 @@ function App() {
               <small>
                 EVENTO
                 <br />
-                <b>Nerdearla 2026</b>
+                <b>{eventName}</b>
               </small>
               <small>
                 AÑO
@@ -1362,8 +1369,8 @@ function ProfileDialog({
   const [qr, setQr] = useState("");
   useEffect(() => {
     if (!collected) return;
-    const url = import.meta.env.VITE_PUBLIC_APP_URL || window.location.origin;
-    QRCode.toDataURL(`${String(url).replace(/\/$/, "")}/b/${profile.id}`, {
+    const url = tenantId ? window.location.origin : import.meta.env.VITE_PUBLIC_APP_URL || window.location.origin;
+    QRCode.toDataURL(tenantProfileUrl(url, profile.id), {
       width: 250,
       margin: 1,
     }).then(setQr);

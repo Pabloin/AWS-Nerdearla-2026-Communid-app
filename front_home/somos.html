@@ -50,6 +50,10 @@
           <img id="qr-image" class="qr-image" alt="" />
           <small>Compartí este QR para que te encuentren y sumen a su pasaporte.</small>
         </div>
+        <form id="profile-edit" class="profile-edit" hidden>
+          <label for="profile-name">Tu nombre público</label>
+          <div><input id="profile-name" name="name" autocomplete="name" maxlength="80" required /><button type="submit">Guardar</button></div>
+        </form>
         <p id="status" role="status" aria-live="polite">Completá tus datos para empezar.</p>
         <button id="start" type="button" hidden>Compartir mi ubicación</button>
         <button id="stop" type="button" hidden>Dejar de compartir</button>

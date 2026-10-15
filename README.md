@@ -219,6 +219,31 @@ is currently sharing a location. `GET /community/live` returns only locations
 updated in the last two minutes. No location history is written; a location
 disappears automatically after updates stop.
 
+## Multitenancy
+
+The independent tenant stack (`terraform/environments/tenants`, default region
+`us-east-2`) prepares `tenants.comunid.app` for experience creation and
+a separate subdomain per tenant. The agreed initial model is **one tenant per
+experience**, with one administrator access token and two planned application
+variants: people/Heroes and countries with a world map. Variant selection will
+be configured in code; a module builder and organization/event hierarchy are
+outside the initial scope. The countries variant is not implemented yet.
+
+`argentina.comunid.app` is the planned first tenant in the new platform.
+The current Argentina deployment and its domains stay separate; no accounts,
+passports, encounters, or QR links are automatically migrated or redirected.
+Paraguay and re:Invent can then use their own tenants and the countries variant.
+Profiles,
+credentials, encounters, photos, locations, and face collections are scoped
+to each tenant.
+See [the multitenancy guide](docs/multitenancy.md) for access, local development,
+isolation, deployment, and current limitations. The domains require deployment
+of the Terraform and application changes before they become available.
+The agreed deployment path is a dedicated GitHub Actions workflow using the
+existing Cloudflare secret and AWS OIDC; that workflow is still pending.
+`./scripts/deploy-tenants.sh plan` remains a manual local alternative. Do not use
+the Argentina production deployment script or workflow for the tenant stack.
+
 ## Product direction
 
 See [COMUNID_IDEA.md](COMUNID_IDEA.md) for the full concept and event principles.

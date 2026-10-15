@@ -36,7 +36,8 @@ resource "aws_iam_role_policy" "lambda" {
       { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:UpdateItem"], Resource = [var.table_arn, "${var.table_arn}/index/*"] },
       { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource = "${var.media_bucket_arn}/*" },
       { Effect = "Allow", Action = ["rekognition:DetectFaces"], Resource = "*" },
-      { Effect = "Allow", Action = ["rekognition:CreateUser", "rekognition:IndexFaces", "rekognition:AssociateFaces", "rekognition:DisassociateFaces", "rekognition:DeleteFaces", "rekognition:SearchUsersByImage"], Resource = aws_rekognition_collection.faces.arn },
+      { Effect = "Allow", Action = ["rekognition:CreateUser", "rekognition:IndexFaces", "rekognition:AssociateFaces", "rekognition:DisassociateFaces", "rekognition:DeleteFaces", "rekognition:SearchUsersByImage"], Resource = [aws_rekognition_collection.faces.arn, "${aws_rekognition_collection.faces.arn}-tenant-*"] },
+      { Effect = "Allow", Action = ["rekognition:CreateCollection"], Resource = "${aws_rekognition_collection.faces.arn}-tenant-*" },
       { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = aws_secretsmanager_secret.admin_token.arn }
     ]
   })
@@ -53,6 +54,7 @@ resource "aws_lambda_function" "api" {
   memory_size      = 256
   environment {
     variables = {
+      TENANT_DOMAIN      = var.tenant_domain
       TABLE_NAME         = var.table_name
       MEDIA_BUCKET       = var.media_bucket_name
       PUBLIC_APP_URL     = var.public_app_url
@@ -68,12 +70,8 @@ resource "aws_lambda_function" "api" {
 resource "aws_apigatewayv2_api" "http" {
   name          = "${var.project_name}-${var.environment}-api"
   protocol_type = "HTTP"
-  cors_configuration {
-    allow_headers = ["content-type", "authorization", "x-hero-profile-id"]
-    allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    allow_origins = var.allowed_origins
-    max_age       = 3600
-  }
+  # Lambda validates explicit origins and tenant subdomains and answers OPTIONS.
+  # Gateway CORS would override the per-origin response from the backend.
   tags = var.tags
 }
 
@@ -103,7 +101,7 @@ resource "aws_apigatewayv2_authorizer" "attendee" {
 }
 
 resource "aws_apigatewayv2_route" "authenticated_encounters" {
-  for_each           = toset(["POST /encounters", "GET /me/encounters", "GET /players/{playerId}/encounters"])
+  for_each           = toset(["POST /encounters", "GET /me/encounters", "GET /players/{playerId}/encounters", "POST /t/{tenantId}/encounters", "GET /t/{tenantId}/me/encounters", "GET /t/{tenantId}/players/{playerId}/encounters"])
   api_id             = aws_apigatewayv2_api.http.id
   route_key          = each.value
   target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"

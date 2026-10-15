@@ -2,6 +2,25 @@
 
 > **Comunid at Nerdearla — discover the people building your community.**
 
+## Platform direction
+
+The Nerdearla experience below describes the original Argentina application.
+The new platform will keep that deployment running separately and introduce
+`argentina.comunid.app` as its first independent tenant, without automatically
+migrating existing users, passports, encounters, or QR links.
+
+The initial platform model is **one tenant per experience**, one administrator
+access, and two application variants: people/Heroes and countries with a world
+map. Heroes becomes an internal component rather than a requirement for every
+experience. Country collection uses a participant's profile country, independently
+of live GPS location. Paraguay and re:Invent are planned examples of the countries
+variant, which is not implemented yet.
+
+Variants are configured in code. A module builder, organization/event hierarchy,
+and granular administrator roles are outside the initial scope. See the
+[multitenancy guide](docs/multitenancy.md) for the agreed scope, current status,
+and independent deployment strategy.
+
 ## Idea
 
 **Comunid** is an event experience that helps people discover the humans

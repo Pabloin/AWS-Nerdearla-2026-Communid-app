@@ -27,3 +27,19 @@ describe("collection", () => {
     expect(questProgress({ id: "q", title: "", description: "", target: 2, role: "builder" }, profiles, encounters)).toBe(1);
   });
 });
+
+
+it("keeps QR badges inside their community", () => {
+  expect(profileIdFromQr("https://tenants.comunid.app/app/b/alex?tenant=alpha", "alpha")).toBe("alex");
+  expect(profileIdFromQr("https://tenants.comunid.app/app/b/alex?tenant=alpha", "bravo")).toBe("");
+  expect(profileIdFromQr("https://tenants.comunid.app/app/b/alex?tenant=alpha")).toBe("");
+  expect(profileIdFromQr("https://mobile.comunid.app/b/alex", "alpha")).toBe("");
+  expect(profileIdFromQr("comunid:builder:alex", "alpha")).toBe("");
+});
+
+
+it("recognizes the community from the QR subdomain", () => {
+  expect(profileIdFromQr("https://alpha.comunid.app/b/alex", "alpha")).toBe("alex");
+  expect(profileIdFromQr("https://alpha.comunid.app/b/alex", "bravo")).toBe("");
+  expect(profileIdFromQr("https://alpha.comunid.app/b/alex")).toBe("");
+});

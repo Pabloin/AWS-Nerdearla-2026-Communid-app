@@ -1,9 +1,10 @@
+import { tenantApiBase, tenantStorageKey, tenantId } from "../shared/tenant.js";
 import "./hero.css";
 
-const apiBase = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-const tokenKey = "comunid:hero-access";
-const profileKey = "comunid:hero-profile";
-const heroes = new Map([
+const apiBase = tenantApiBase(import.meta.env.VITE_API_BASE_URL);
+const tokenKey = tenantStorageKey("comunid:hero-access");
+const profileKey = tenantStorageKey("comunid:hero-profile");
+const heroes = new Map(tenantId ? [] : [
   ["matias-kreder", "Matias Kreder"],
   ["rossana-suarez", "Rossana Suarez (Roxs)"],
   ["ricardo-ceci", "Ricardo Ceci"],
@@ -60,6 +61,7 @@ function showSelectedHero() {
   const id = select.value;
   qr.hidden = !id;
   if (id) {
+    document.querySelector("#hero-photo").hidden = !heroPhotoFiles[id] || Boolean(tenantId);
     document.querySelector("#hero-photo").src = `/app/heros/${heroPhotoFiles[id]}`;
     document.querySelector("#hero-photo").alt = `Foto de ${heroes.get(id)}`;
     document.querySelector("#qr-image").src = `${apiBase}/profiles/${id}/qr`;
@@ -110,7 +112,7 @@ async function authorize(candidate) {
     sessionStorage.removeItem(tokenKey);
     sessionStorage.removeItem(profileKey);
     showSelectedHero();
-    message("El código es HERO. Revisá también que hayas elegido tu nombre.", true);
+    message(tenantId ? "El enlace privado no es válido para esta comunidad." : "El código es HERO. Revisá también que hayas elegido tu nombre.", true);
   }
 }
 
@@ -175,9 +177,24 @@ stop.addEventListener("click", async () => {
   }
 });
 
-const fragment = decodeURIComponent(location.hash.slice(1));
-if (fragment) history.replaceState(null, "", location.pathname);
-if (authorizedHeroId && heroes.has(authorizedHeroId)) select.value = authorizedHeroId;
-if (fragment) void authorize(fragment);
-else if (token) void authorize(token);
-else showSelectedHero();
+async function initialize() {
+  const fragment = decodeURIComponent(location.hash.slice(1));
+  if (fragment) history.replaceState(null, "", location.pathname + location.search);
+  if (tenantId) {
+    select.replaceChildren(new Option("Elegí tu Hero", ""));
+    try {
+      const response = await fetch(`${apiBase}/profiles`);
+      if (!response.ok) throw new Error();
+      const { profiles } = await response.json();
+      for (const profile of profiles.filter((item) => item.role === "hero")) {
+        heroes.set(profile.id, profile.name);
+        select.add(new Option(profile.name, profile.id));
+      }
+    } catch { return message("No pudimos cargar los Heroes de esta comunidad.", true); }
+  }
+  if (authorizedHeroId && heroes.has(authorizedHeroId)) select.value = authorizedHeroId;
+  if (fragment) await authorize(fragment);
+  else if (token) await authorize(token);
+  else showSelectedHero();
+}
+void initialize();

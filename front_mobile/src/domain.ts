@@ -37,15 +37,19 @@ export const roleLabels: Record<CommunityRole, string> = {
   legend: "Legend"
 };
 
-export function profileIdFromQr(payload: string): string {
+export function profileIdFromQr(payload: string, tenantId = "", tenantDomain = "comunid.app"): string {
   const normalized = payload.trim();
   if (normalized.startsWith("comunid:builder:")) {
-    return normalized.slice("comunid:builder:".length);
+    return tenantId ? "" : normalized.slice("comunid:builder:".length);
   }
 
   try {
     const url = new URL(normalized);
-    const match = url.pathname.match(/^\/b\/([^/]+)\/?$/);
+    const reserved = new Set(["www", "app", "mobile", "admin", "hero", "somos", "tenants"]);
+    const subdomain = url.hostname.endsWith(`.${tenantDomain}`) ? url.hostname.slice(0, -tenantDomain.length - 1) : "";
+    const badgeTenant = subdomain && !reserved.has(subdomain) ? subdomain : url.searchParams.get("tenant") || "";
+    if (badgeTenant !== tenantId) return "";
+    const match = url.pathname.match(/^\/(?:app\/)?b\/([^/]+)\/?$/);
     return match ? decodeURIComponent(match[1]) : "";
   } catch {
     return "";

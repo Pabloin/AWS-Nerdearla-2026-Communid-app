@@ -1,4 +1,8 @@
 module "comunid" {
+  providers = {
+    aws             = aws
+    aws.certificate = aws.us_east_1
+  }
   source             = "../../modules/comunid"
   environment        = "staging"
   domain_name        = "staging.comunid.app"

@@ -7,6 +7,8 @@ function handler(event) {
   var adminDomain = "${admin_domain}";
   var heroDomain = "${hero_domain}";
   var somosDomain = "${somos_domain}";
+  var tenantDomain = "${tenant_domain}";
+  var tenantsDomain = "${tenants_domain}";
   var wwwDomain = "${www_domain}";
 
   if (wwwDomain && host === wwwDomain) {
@@ -15,6 +17,11 @@ function handler(event) {
       statusDescription: "Moved Permanently",
       headers: { location: { value: "https://${root_domain}" + uri } }
     };
+  }
+
+  if (tenantsDomain && host === tenantsDomain && (uri === "/" || uri === "/index.html")) {
+    request.uri = "/tenants.html";
+    return request;
   }
 
   if (heroDomain && host === heroDomain) {
@@ -27,7 +34,10 @@ function handler(event) {
     return request;
   }
 
-  var hostSection = (mobileDomain && host === mobileDomain) || (appDomain && host === appDomain) ? "/app" : adminDomain && host === adminDomain ? "/admin" : "";
+  var tenantHost = tenantDomain && host.slice(-(tenantDomain.length + 1)) === "." + tenantDomain && host !== wwwDomain && host !== mobileDomain && host !== appDomain && host !== adminDomain && host !== tenantsDomain;
+  if (tenantHost && (uri === "/somos.html" || uri === "/hero.html" || uri.indexOf("/assets/") === 0 || uri.indexOf("/brand/") === 0)) return request;
+
+  var hostSection = (mobileDomain && host === mobileDomain) || (appDomain && host === appDomain) || tenantHost ? "/app" : adminDomain && host === adminDomain ? "/admin" : "";
   if (hostSection && uri.indexOf("/app/") !== 0 && uri.indexOf("/admin/") !== 0 && uri.indexOf("/b/") !== 0) {
     request.uri = hostSection + (uri === "/" ? "/index.html" : uri);
     uri = request.uri;

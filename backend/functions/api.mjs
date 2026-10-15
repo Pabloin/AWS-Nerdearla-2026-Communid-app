@@ -1,9 +1,10 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { AssociateFacesCommand, CreateUserCommand, DeleteFacesCommand, DetectFacesCommand, DisassociateFacesCommand, IndexFacesCommand, RekognitionClient, SearchUsersByImageCommand } from "@aws-sdk/client-rekognition";
+import { AssociateFacesCommand, CreateCollectionCommand, CreateUserCommand, DeleteFacesCommand, DetectFacesCommand, DisassociateFacesCommand, IndexFacesCommand, RekognitionClient, SearchUsersByImageCommand } from "@aws-sdk/client-rekognition";
 import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 import QRCode from "qrcode";
+import { tenantContext, tenant, scopedDatabase, validTenantId } from "./tenancy.mjs";
 import { demoProfiles } from "./demo-profiles.mjs";
 import { encounterKeys, normalizeProfile, publicProfileUrl } from "./domain.mjs";
 import { imageBytes, rekognitionUserId } from "./face-image.mjs";
@@ -16,17 +17,36 @@ const adminSecretArn = process.env.ADMIN_SECRET_ARN || "";
 const faceCollectionId = process.env.FACE_COLLECTION_ID || "";
 const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS || "http://127.0.0.1:5190,http://127.0.0.1:5192,https://comunid.app").split(",").map((origin) => origin.trim()));
 const heroLocationLifetimeMs = 10 * 60 * 1000;
-const database = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const rawDatabase = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const database = scopedDatabase(rawDatabase);
+const currentEventId = () => tenant()?.eventId || defaultEventId;
+const tenantDomain = process.env.TENANT_DOMAIN || "comunid.app";
+const currentAppUrl = () => tenant() ? `https://${tenant().id}.${tenantDomain}` : publicAppUrl;
+const currentFaceCollection = () => faceCollectionId && tenant() ? `${faceCollectionId}-tenant-${tenant().id}` : faceCollectionId;
+const currentDemoProfiles = () => tenant() ? [] : demoProfiles;
+function profileUrl(profileId) {
+  const url = new URL(publicProfileUrl(currentAppUrl(), profileId));
+  return url.toString();
+}
 const rekognition = new RekognitionClient({});
 const secrets = new SecretsManagerClient({});
 let cachedAdminToken = "";
 let adminTokenExpiresAt = 0;
 
+function allowedOrigin(origin) {
+  if (allowedOrigins.has(origin)) return true;
+  try {
+    const url = new URL(origin);
+    const suffix = `.${tenantDomain}`;
+    return url.protocol === "https:" && !url.port && url.origin === origin && url.hostname.endsWith(suffix) && validTenantId(url.hostname.slice(0, -suffix.length));
+  } catch { return false; }
+}
+
 function headers(event, contentType = "application/json") {
   const origin = event?.headers?.origin;
   return {
     "content-type": contentType,
-    "access-control-allow-origin": allowedOrigins.has(origin) ? origin : publicAppUrl,
+    "access-control-allow-origin": allowedOrigin(origin) ? origin : publicAppUrl,
     "access-control-allow-headers": "content-type,authorization,x-hero-profile-id",
     "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
     vary: "origin"
@@ -77,7 +97,7 @@ async function guestFromRequest(event) {
     Key: { pk: `GUEST#${match[1]}`, sk: "PROFILE" }
   }));
   const item = result.Item;
-  if (!item || item.eventId !== defaultEventId || !item.tokenHash) return null;
+  if (!item || item.eventId !== currentEventId() || !item.tokenHash) return null;
   const actual = createHash("sha256").update(match[2]).digest();
   const expected = Buffer.from(item.tokenHash, "hex");
   return expected.length === actual.length && timingSafeEqual(expected, actual) ? item : null;
@@ -97,7 +117,7 @@ async function createGuest(event) {
   const tokenHash = createHash("sha256").update(secret).digest("hex");
   const item = {
     pk: `GUEST#${guestId}`, sk: "PROFILE", entityType: "GUEST", guestId,
-    eventId: defaultEventId, name, ...(email ? { email } : {}), tokenHash, contactConsent: false,
+    eventId: currentEventId(), name, ...(email ? { email } : {}), tokenHash, contactConsent: false,
     createdAt: new Date().toISOString()
   };
   await database.send(new PutCommand({
@@ -109,7 +129,7 @@ async function createGuest(event) {
 
 async function heroFromRequest(event) {
   const authorization = event.headers?.authorization || event.headers?.Authorization || "";
-  if (/^Hero\s+HERO$/i.test(authorization)) {
+  if (!tenant() && /^Hero\s+HERO$/i.test(authorization)) {
     const profileId = event.headers?.["x-hero-profile-id"] || event.headers?.["X-Hero-Profile-Id"] || "";
     const profile = profileId ? await persistedProfile(profileId) : null;
     return profile?.consent === true && profile.role === "hero" ? profile : null;
@@ -120,7 +140,7 @@ async function heroFromRequest(event) {
     TableName: tableName, Key: { pk: `HERO#${match[1]}`, sk: "ACCESS" }
   }));
   const access = result.Item;
-  if (!access || access.eventId !== defaultEventId) return null;
+  if (!access || access.eventId !== currentEventId()) return null;
   const actual = createHash("sha256").update(match[2]).digest();
   const expected = Buffer.from(access.tokenHash || "", "hex");
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
@@ -138,7 +158,7 @@ async function communityFromRequest(event) {
     const result = await database.send(new GetCommand({ TableName: tableName, Key: { pk, sk: "ACCESS" } }));
     if (result.Item) { access = result.Item; break; }
   }
-  if (!access || access.eventId !== defaultEventId) return null;
+  if (!access || access.eventId !== currentEventId()) return null;
   const actual = createHash("sha256").update(match[2]).digest();
   const expected = Buffer.from(access.tokenHash || "", "hex");
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
@@ -154,11 +174,11 @@ async function createHeroLink(event, profileId) {
   const secret = randomBytes(32).toString("base64url");
   await database.send(new PutCommand({
     TableName: tableName,
-    Item: { pk: `HERO#${profileId}`, sk: "ACCESS", eventId: defaultEventId,
+    Item: { pk: `HERO#${profileId}`, sk: "ACCESS", eventId: currentEventId(),
       tokenHash: createHash("sha256").update(secret).digest("hex"), updatedAt: new Date().toISOString() }
   }));
   await database.send(new DeleteCommand({ TableName: tableName, Key: { pk: `HERO#${profileId}`, sk: "LOCATION" } }));
-  return json(event, 201, { profileId, url: `https://hero.comunid.app/#${profileId}.${secret}` });
+  return json(event, 201, { profileId, url: tenant() ? `${currentAppUrl()}/hero.html#${profileId}.${secret}` : `https://hero.comunid.app/#${profileId}.${secret}` });
 }
 
 async function registerCommunityMember(event) {
@@ -171,7 +191,7 @@ async function registerCommunityMember(event) {
   if (name.length < 2 || name.length > 80 || /[\x00-\x1f\x7f]/.test(name)) {
     return json(event, 422, { error: "community_name_invalid" });
   }
-  if (!communities.has(community)) return json(event, 422, { error: "community_invalid" });
+  if (tenant() ? community.length < 2 || community.length > 120 || /[\x00-\x1f\x7f]/.test(community) : !communities.has(community)) return json(event, 422, { error: "community_invalid" });
   if (!roles.has(role)) return json(event, 422, { error: "community_role_invalid" });
   const profileId = `member-${randomUUID()}`;
   const secret = randomBytes(32).toString("base64url");
@@ -186,10 +206,10 @@ async function registerCommunityMember(event) {
     photoItem = { pk: `PROFILE#${profileId}`, sk: "PHOTO", contentType: `image/${match[1]}`, imageBase64: match[2] };
   }
   await database.send(new PutCommand({ TableName: tableName,
-    Item: { pk: `EVENT#${defaultEventId}`, sk: `PROFILE#${profileId}`, entityType: "PROFILE", eventId: defaultEventId, ...profile, createdAt: timestamp, updatedAt: timestamp },
+    Item: { pk: `EVENT#${currentEventId()}`, sk: `PROFILE#${profileId}`, entityType: "PROFILE", eventId: currentEventId(), ...profile, createdAt: timestamp, updatedAt: timestamp },
     ConditionExpression: "attribute_not_exists(pk) AND attribute_not_exists(sk)" }));
   if (photoItem) await database.send(new PutCommand({ TableName: tableName, Item: photoItem }));
-  await database.send(new PutCommand({ TableName: tableName, Item: { pk: `COMMUNITY#${profileId}`, sk: "ACCESS", eventId: defaultEventId,
+  await database.send(new PutCommand({ TableName: tableName, Item: { pk: `COMMUNITY#${profileId}`, sk: "ACCESS", eventId: currentEventId(),
     tokenHash: createHash("sha256").update(secret).digest("hex"), updatedAt: timestamp } }));
   return json(event, 201, { profileId, name, role, community, token: `${profileId}.${secret}` });
 }
@@ -199,7 +219,7 @@ async function communityRoute(event, method, parts) {
   if (method === "GET" && parts[1] === "live" && parts.length === 2) {
     const profiles = await queryAll({ TableName: tableName,
       KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
-      ExpressionAttributeValues: { ":pk": `EVENT#${defaultEventId}`, ":prefix": "PROFILE#" }
+      ExpressionAttributeValues: { ":pk": `EVENT#${currentEventId()}`, ":prefix": "PROFILE#" }
     });
     const sharing = await Promise.all(profiles.filter((profile) => profile.consent === true).map(async (profile) => {
       const result = await database.send(new GetCommand({ TableName: tableName,
@@ -220,17 +240,15 @@ async function communityRoute(event, method, parts) {
   if (method === "PUT" && parts[1] === "me" && parts[2] === "profile" && parts.length === 3) {
     const input = parseBody(event);
     const name = String(input?.name || "").trim().replace(/\s+/g, " ");
-    const email = String(input?.email || "").trim().toLowerCase();
-    if (name.length < 2 || name.length > 60 || /[\x00-\x1f\x7f]/.test(name)) return json(event, 422, { error: "guest_name_invalid" });
-    if (email.length > 254 || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return json(event, 422, { error: "guest_email_invalid" });
+    if (name.length < 2 || name.length > 80 || /[\x00-\x1f\x7f]/.test(name)) return json(event, 422, { error: "community_name_invalid" });
     const result = await database.send(new UpdateCommand({
-      TableName: tableName, Key: { pk: guest.pk, sk: guest.sk },
-      UpdateExpression: "SET #name = :name, updatedAt = :updatedAt" + (email ? ", email = :email" : " REMOVE email"),
+      TableName: tableName, Key: { pk: `EVENT#${currentEventId()}`, sk: `PROFILE#${profile.id}` },
+      UpdateExpression: "SET #name = :name, updatedAt = :updatedAt",
       ExpressionAttributeNames: { "#name": "name" },
-      ExpressionAttributeValues: { ":name": name, ":updatedAt": new Date().toISOString(), ...(email ? { ":email": email } : {}) },
+      ExpressionAttributeValues: { ":name": name, ":updatedAt": new Date().toISOString() },
       ConditionExpression: "attribute_exists(pk) AND attribute_exists(sk)", ReturnValues: "ALL_NEW"
     }));
-    return json(event, 200, { guest: guestPublic(result.Attributes) });
+    return json(event, 200, { profileId: profile.id, name: result.Attributes.name, role: profile.role, community: profile.community });
   }
   if (parts[1] === "me" && parts[2] === "location" && parts.length === 3) {
     if (method === "DELETE") {
@@ -248,7 +266,7 @@ async function communityRoute(event, method, parts) {
       }
       const now = Date.now();
       await database.send(new PutCommand({ TableName: tableName,
-        Item: { pk: `HERO#${profile.id}`, sk: "LOCATION", eventId: defaultEventId,
+        Item: { pk: `HERO#${profile.id}`, sk: "LOCATION", eventId: currentEventId(),
           latitude, longitude, accuracy, updatedAt: new Date(now).toISOString(), expiresAt: now + heroLocationLifetimeMs }
       }));
       return json(event, 200, { sharing: true, updatedAt: new Date(now).toISOString() });
@@ -261,7 +279,7 @@ async function heroRoute(event, method, parts) {
   if (method === "GET" && parts[1] === "live" && parts.length === 2) {
     const profiles = await queryAll({ TableName: tableName,
       KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
-      ExpressionAttributeValues: { ":pk": `EVENT#${defaultEventId}`, ":prefix": "PROFILE#" }
+      ExpressionAttributeValues: { ":pk": `EVENT#${currentEventId()}`, ":prefix": "PROFILE#" }
     });
     const heroes = await Promise.all(profiles.filter((profile) => profile.role === "hero" && profile.consent === true)
       .map(async (profile) => {
@@ -296,7 +314,7 @@ async function heroRoute(event, method, parts) {
       }
       const now = Date.now();
       await database.send(new PutCommand({ TableName: tableName,
-        Item: { pk: `HERO#${profile.id}`, sk: "LOCATION", eventId: defaultEventId,
+        Item: { pk: `HERO#${profile.id}`, sk: "LOCATION", eventId: currentEventId(),
           latitude, longitude, accuracy, updatedAt: new Date(now).toISOString(),
           expiresAt: now + heroLocationLifetimeMs }
       }));
@@ -312,7 +330,7 @@ async function guestEncounters(guestId) {
     KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
     ExpressionAttributeValues: {
       ":pk": `PLAYER#${guestPlayerId(guestId)}`,
-      ":prefix": `ENCOUNTER#${defaultEventId}#`
+      ":prefix": `ENCOUNTER#${currentEventId()}#`
     }
   });
 }
@@ -326,12 +344,12 @@ async function guestRoute(event, method, parts) {
   }
   if (parts[1] === "me" && parts[2] === "encounters" && parts.length === 3) {
     if (method === "GET") {
-      return json(event, 200, { eventId: defaultEventId, encounters: await guestEncounters(guest.guestId) });
+      return json(event, 200, { eventId: currentEventId(), encounters: await guestEncounters(guest.guestId) });
     }
     if (method === "POST") {
       const input = parseBody(event);
       const keys = encounterKeys({
-        eventId: defaultEventId,
+        eventId: currentEventId(),
         playerId: guestPlayerId(guest.guestId),
         profileId: input.profileId
       });
@@ -403,6 +421,13 @@ async function configuredAdminToken() {
 }
 
 async function adminAuthorized(event) {
+  if (tenant()) {
+    const authorization = event.headers?.authorization || event.headers?.Authorization || "";
+    if (!authorization.startsWith("Bearer ")) return false;
+    const actual = createHash("sha256").update(authorization.slice(7)).digest("hex");
+    const expected = tenant().adminTokenHash;
+    return typeof expected === "string" && expected.length === actual.length && timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
+  }
   const expected = await configuredAdminToken();
   const authorization = event.headers?.authorization || event.headers?.Authorization || "";
   if (!expected || !authorization.startsWith("Bearer ")) return false;
@@ -427,21 +452,21 @@ async function managedProfiles(event) {
   const items = await queryAll({
     TableName: tableName,
     KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
-    ExpressionAttributeValues: { ":pk": `EVENT#${defaultEventId}`, ":prefix": "PROFILE#" }
+    ExpressionAttributeValues: { ":pk": `EVENT#${currentEventId()}`, ":prefix": "PROFILE#" }
   });
-  return json(event, 200, { eventId: defaultEventId, profiles: items.map((item) => profileFromItem(item, true)) });
+  return json(event, 200, { eventId: currentEventId(), profiles: items.map((item) => profileFromItem(item, true)) });
 }
 
 async function persistedProfile(profileId) {
   const result = await database.send(new GetCommand({
     TableName: tableName,
-    Key: { pk: `EVENT#${defaultEventId}`, sk: `PROFILE#${profileId}` }
+    Key: { pk: `EVENT#${currentEventId()}`, sk: `PROFILE#${profileId}` }
   }));
   return result.Item;
 }
 
 function requireFaceCollection(event) {
-  return faceCollectionId ? null : json(event, 503, { error: "face_collection_not_configured" });
+  return currentFaceCollection() ? null : json(event, 503, { error: "face_collection_not_configured" });
 }
 
 async function detectFaces(event) {
@@ -477,16 +502,21 @@ async function enrollFace(event) {
   const bytes = imageBytes(input.imageBase64);
   const detected = await rekognition.send(new DetectFacesCommand({ Image: { Bytes: bytes }, Attributes: ["DEFAULT"] }));
   if (detected.FaceDetails?.length !== 1) return json(event, 422, { error: "single_face_required" });
-  const userId = rekognitionUserId(defaultEventId, profileId);
+  const userId = rekognitionUserId(currentEventId(), profileId);
 
+  // Provision only the selected tenant's collection, on first enrollment.
+  if (tenant()) {
+    try { await rekognition.send(new CreateCollectionCommand({ CollectionId: currentFaceCollection() })); }
+    catch (error) { if (error.name !== "ResourceAlreadyExistsException") throw error; }
+  }
   try {
-    await rekognition.send(new CreateUserCommand({ CollectionId: faceCollectionId, UserId: userId }));
+    await rekognition.send(new CreateUserCommand({ CollectionId: currentFaceCollection(), UserId: userId }));
   } catch (error) {
     if (error.name !== "ResourceAlreadyExistsException") throw error;
   }
 
   const indexed = await rekognition.send(new IndexFacesCommand({
-    CollectionId: faceCollectionId,
+    CollectionId: currentFaceCollection(),
     Image: { Bytes: bytes },
     ExternalImageId: userId,
     MaxFaces: 1,
@@ -497,27 +527,27 @@ async function enrollFace(event) {
 
   try {
     const associated = await rekognition.send(new AssociateFacesCommand({
-      CollectionId: faceCollectionId,
+      CollectionId: currentFaceCollection(),
       UserId: userId,
       FaceIds: [faceId]
     }));
     if (!associated.AssociatedFaces?.some((face) => face.FaceId === faceId)) {
-      await rekognition.send(new DeleteFacesCommand({ CollectionId: faceCollectionId, FaceIds: [faceId] }));
+      await rekognition.send(new DeleteFacesCommand({ CollectionId: currentFaceCollection(), FaceIds: [faceId] }));
       return json(event, 422, { error: "face_association_rejected" });
     }
     const timestamp = new Date().toISOString();
     await database.send(new PutCommand({
       TableName: tableName,
-      Item: { pk: `REKOGNITION_USER#${userId}`, sk: "PROFILE", profileId, eventId: defaultEventId }
+      Item: { pk: `REKOGNITION_USER#${userId}`, sk: "PROFILE", profileId, eventId: currentEventId() }
     }));
     await database.send(new PutCommand({
       TableName: tableName,
-      Item: { pk: `PROFILE#${profileId}`, sk: `FACE#${faceId}`, entityType: "FACE", profileId, faceId, eventId: defaultEventId, createdAt: timestamp }
+      Item: { pk: `PROFILE#${profileId}`, sk: `FACE#${faceId}`, entityType: "FACE", profileId, faceId, eventId: currentEventId(), createdAt: timestamp }
     }));
     return json(event, 201, { profileId, faceId, createdAt: timestamp });
   } catch (error) {
-    await rekognition.send(new DisassociateFacesCommand({ CollectionId: faceCollectionId, UserId: userId, FaceIds: [faceId] })).catch(() => {});
-    await rekognition.send(new DeleteFacesCommand({ CollectionId: faceCollectionId, FaceIds: [faceId] })).catch(() => {});
+    await rekognition.send(new DisassociateFacesCommand({ CollectionId: currentFaceCollection(), UserId: userId, FaceIds: [faceId] })).catch(() => {});
+    await rekognition.send(new DeleteFacesCommand({ CollectionId: currentFaceCollection(), FaceIds: [faceId] })).catch(() => {});
     throw error;
   }
 }
@@ -526,9 +556,9 @@ async function deleteFace(event, profileId, faceId) {
   const key = { pk: `PROFILE#${profileId}`, sk: `FACE#${faceId}` };
   const result = await database.send(new GetCommand({ TableName: tableName, Key: key }));
   if (!result.Item) return json(event, 404, { error: "face_not_found" });
-  const userId = rekognitionUserId(defaultEventId, profileId);
-  await rekognition.send(new DisassociateFacesCommand({ CollectionId: faceCollectionId, UserId: userId, FaceIds: [faceId] }));
-  await rekognition.send(new DeleteFacesCommand({ CollectionId: faceCollectionId, FaceIds: [faceId] }));
+  const userId = rekognitionUserId(currentEventId(), profileId);
+  await rekognition.send(new DisassociateFacesCommand({ CollectionId: currentFaceCollection(), UserId: userId, FaceIds: [faceId] }));
+  await rekognition.send(new DeleteFacesCommand({ CollectionId: currentFaceCollection(), FaceIds: [faceId] }));
   await database.send(new DeleteCommand({ TableName: tableName, Key: key }));
   return json(event, 200, { deleted: true, faceId });
 }
@@ -536,16 +566,19 @@ async function deleteFace(event, profileId, faceId) {
 async function searchFaces(event) {
   const bytes = imageBytes(parseBody(event).imageBase64);
   const result = await rekognition.send(new SearchUsersByImageCommand({
-    CollectionId: faceCollectionId,
+    CollectionId: currentFaceCollection(),
     Image: { Bytes: bytes },
     MaxUsers: 3,
     UserMatchThreshold: 80
-  }));
+  })).catch((error) => {
+    if (tenant() && error.name === "ResourceNotFoundException") return { UserMatches: [] };
+    throw error;
+  });
   const matches = await Promise.all((result.UserMatches || []).map(async (match) => {
     const userId = match.User?.UserId;
     if (!userId) return null;
     const mapping = await database.send(new GetCommand({ TableName: tableName, Key: { pk: `REKOGNITION_USER#${userId}`, sk: "PROFILE" } }));
-    if (!mapping.Item || mapping.Item.eventId !== defaultEventId) return null;
+    if (!mapping.Item || mapping.Item.eventId !== currentEventId()) return null;
     const profile = await persistedProfile(mapping.Item.profileId);
     if (!profile || profile.consent !== true || profile.faceConsent !== true) return null;
     return { profileId: profile.id, name: profile.name, similarity: match.Similarity };
@@ -560,7 +593,7 @@ async function updateFaceConsent(event, profileId) {
   if (!profile || profile.consent !== true) return json(event, 404, { error: "consented_profile_not_found" });
   await database.send(new UpdateCommand({
     TableName: tableName,
-    Key: { pk: `EVENT#${defaultEventId}`, sk: `PROFILE#${profileId}` },
+    Key: { pk: `EVENT#${currentEventId()}`, sk: `PROFILE#${profileId}` },
     UpdateExpression: "SET faceConsent = :consent, updatedAt = :updatedAt",
     ExpressionAttributeValues: { ":consent": faceConsent, ":updatedAt": new Date().toISOString() }
   }));
@@ -579,30 +612,30 @@ async function listProfiles(event) {
   const result = await database.send(new QueryCommand({
     TableName: tableName,
     KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
-    ExpressionAttributeValues: { ":pk": `EVENT#${defaultEventId}`, ":prefix": "PROFILE#" }
+    ExpressionAttributeValues: { ":pk": `EVENT#${currentEventId()}`, ":prefix": "PROFILE#" }
   }));
   const profiles = (result.Items || []).filter((item) => item.consent === true).map(profileFromItem);
   const ids = new Set(profiles.map((profile) => profile.id));
-  return json(event, 200, { eventId: defaultEventId, profiles: [
-    ...profiles, ...demoProfiles.filter((profile) => !ids.has(profile.id))
+  return json(event, 200, { eventId: currentEventId(), profiles: [
+    ...profiles, ...currentDemoProfiles().filter((profile) => !ids.has(profile.id))
   ] });
 }
 
 async function getProfile(event, profileId) {
   const result = await database.send(new GetCommand({
     TableName: tableName,
-    Key: { pk: `EVENT#${defaultEventId}`, sk: `PROFILE#${profileId}` }
+    Key: { pk: `EVENT#${currentEventId()}`, sk: `PROFILE#${profileId}` }
   }));
-  const item = result.Item || demoProfiles.find((profile) => profile.id === profileId);
+  const item = result.Item || currentDemoProfiles().find((profile) => profile.id === profileId);
   if (!item || item.consent === false) return json(event, 404, { error: "profile_not_found" });
-  return json(event, 200, { ...profileFromItem(item), qrPayload: publicProfileUrl(publicAppUrl, profileId) });
+  return json(event, 200, { ...profileFromItem(item), qrPayload: profileUrl(profileId) });
 }
 
 async function profileExists(profileId) {
-  if (demoProfiles.some((profile) => profile.id === profileId && profile.consent)) return true;
+  if (currentDemoProfiles().some((profile) => profile.id === profileId && profile.consent)) return true;
   const result = await database.send(new GetCommand({
     TableName: tableName,
-    Key: { pk: `EVENT#${defaultEventId}`, sk: `PROFILE#${profileId}` }
+    Key: { pk: `EVENT#${currentEventId()}`, sk: `PROFILE#${profileId}` }
   }));
   return result.Item?.consent === true;
 }
@@ -616,17 +649,17 @@ async function createProfile(event) {
   const timestamp = new Date().toISOString();
   await database.send(new PutCommand({
     TableName: tableName,
-    Item: { pk: `EVENT#${defaultEventId}`, sk: `PROFILE#${profile.id}`, entityType: "PROFILE", eventId: defaultEventId, ...profile, createdAt: timestamp, updatedAt: timestamp },
+    Item: { pk: `EVENT#${currentEventId()}`, sk: `PROFILE#${profile.id}`, entityType: "PROFILE", eventId: currentEventId(), ...profile, createdAt: timestamp, updatedAt: timestamp },
     ConditionExpression: "attribute_not_exists(pk) AND attribute_not_exists(sk)"
   }));
-  return json(event, 201, { ...profile, qrPayload: publicProfileUrl(publicAppUrl, profile.id) });
+  return json(event, 201, { ...profile, qrPayload: profileUrl(profile.id) });
 }
 
 async function createEncounter(event) {
   const playerId = authenticatedPlayerId(event);
   if (!playerId) return json(event, 401, { error: "authentication_required" });
   const input = parseBody(event);
-  const keys = encounterKeys({ eventId: defaultEventId, playerId, profileId: input.profileId });
+  const keys = encounterKeys({ eventId: currentEventId(), playerId, profileId: input.profileId });
   if (!(await profileExists(keys.profileId))) return json(event, 404, { error: "profile_not_found" });
   const timestamp = new Date().toISOString();
   await database.send(new PutCommand({
@@ -647,13 +680,13 @@ async function listEncounters(event, playerId) {
   const result = await database.send(new QueryCommand({
     TableName: tableName,
     KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
-    ExpressionAttributeValues: { ":pk": `PLAYER#${playerId}`, ":prefix": `ENCOUNTER#${defaultEventId}#` }
+    ExpressionAttributeValues: { ":pk": `PLAYER#${playerId}`, ":prefix": `ENCOUNTER#${currentEventId()}#` }
   }));
-  return json(event, 200, { playerId, eventId: defaultEventId, encounters: result.Items || [] });
+  return json(event, 200, { playerId, eventId: currentEventId(), encounters: result.Items || [] });
 }
 
 async function profileQr(event, profileId) {
-  const svg = await QRCode.toString(publicProfileUrl(publicAppUrl, profileId), {
+  const svg = await QRCode.toString(profileUrl(profileId), {
     type: "svg",
     width: 320,
     margin: 1,
@@ -662,19 +695,19 @@ async function profileQr(event, profileId) {
   return { statusCode: 200, headers: { ...headers(event, "image/svg+xml"), "cache-control": "public,max-age=3600" }, body: svg };
 }
 
-export async function handler(event) {
+async function applicationHandler(event) {
   const method = event.requestContext?.http?.method || event.httpMethod;
   if (method === "OPTIONS") return { statusCode: 204, headers: headers(event), body: "" };
   const parts = routeParts(event);
 
   try {
-    if (method === "GET" && parts[0] === "health") return json(event, 200, { service: "comunid-api", status: "ok", eventId: defaultEventId });
+    if (method === "GET" && parts[0] === "health") return json(event, 200, { service: "comunid-api", status: "ok", eventId: currentEventId(), ...(tenant() ? { tenant: { id: tenant().id, name: tenant().name } } : {}) });
     if (parts[0] === "community") return communityRoute(event, method, parts);
     if (parts[0] === "guests") return guestRoute(event, method, parts);
     if (parts[0] === "heroes") return heroRoute(event, method, parts);
     if (parts[0] === "admin") {
       if (!(await adminAuthorized(event))) return json(event, 401, { error: "admin_authorization_required" });
-      if (method === "GET" && parts[1] === "session") return json(event, 200, { authorized: true, faceCollectionConfigured: Boolean(faceCollectionId), eventId: defaultEventId });
+      if (method === "GET" && parts[1] === "session") return json(event, 200, { authorized: true, faceCollectionConfigured: Boolean(currentFaceCollection()), eventId: currentEventId() });
       if (method === "POST" && parts[1] === "heroes" && parts[2] && parts[3] === "link" && parts.length === 4) return createHeroLink(event, parts[2]);
       if (method === "GET" && parts[1] === "profiles" && !parts[2]) return managedProfiles(event);
       if (method === "POST" && parts[1] === "profiles" && !parts[2]) return createProfile(event);
@@ -709,5 +742,44 @@ export async function handler(event) {
     const clientError = ["invalid_json", "invalid_profile_role", "profile_name_required", "encounter_fields_required", "invalid_image", "image_too_large", "profile_id_required", "invalid_face_consent"].includes(message);
     const status = error.name === "ConditionalCheckFailedException" ? 409 : error.name === "InvalidParameterException" ? 422 : clientError ? 400 : 500;
     return json(event, status, { error: status === 500 ? "unexpected_error" : message });
+  }
+}
+
+
+// Registry requests always use the platform administrator and the unscoped client.
+// A tenant administrator can never create or inspect another tenant.
+export async function handler(event) {
+  if ((event.requestContext?.http?.method || event.httpMethod) === "OPTIONS") return { statusCode: 204, headers: headers(event), body: "" };
+  try {
+    const parts = routeParts(event);
+    const method = event.requestContext?.http?.method || event.httpMethod;
+    if (parts[0] === "tenants" && parts.length === 1) {
+      if (!(await adminAuthorized(event))) return json(event, 401, { error: "platform_authorization_required" });
+      if (method === "GET") {
+        const items = await queryAll({ TableName: tableName, KeyConditionExpression: "pk = :pk", ExpressionAttributeValues: { ":pk": "TENANTS" } });
+        return json(event, 200, { tenants: items.map(({ id, name, eventId, createdAt }) => ({ id, name, eventId, createdAt })) });
+      }
+      if (method === "POST") {
+        const input = parseBody(event);
+        const id = input.id;
+        const name = String(input.name || "").trim();
+        const eventId = String(input.eventId || id || "");
+        if (!validTenantId(id) || name.length < 2 || name.length > 100 || !/^[a-zA-Z0-9-]{2,80}$/.test(eventId)) return json(event, 422, { error: "invalid_tenant" });
+        const token = randomBytes(32).toString("base64url");
+        const item = { pk: "TENANTS", sk: `TENANT#${id}`, id, name, eventId, createdAt: new Date().toISOString(), adminTokenHash: createHash("sha256").update(token).digest("hex") };
+        await rawDatabase.send(new PutCommand({ TableName: tableName, Item: item, ConditionExpression: "attribute_not_exists(pk) AND attribute_not_exists(sk)" }));
+        return json(event, 201, { tenant: { id, name, eventId }, adminToken: token });
+      }
+      return json(event, 405, { error: "method_not_allowed" });
+    }
+    if (parts[0] !== "t") return await applicationHandler(event);
+    if (!validTenantId(parts[1])) return json(event, 400, { error: "invalid_tenant" });
+    const result = await rawDatabase.send(new GetCommand({ TableName: tableName, Key: { pk: "TENANTS", sk: `TENANT#${parts[1]}` } }));
+    if (!result.Item) return json(event, 404, { error: "tenant_not_found" });
+    return await tenantContext.run(result.Item, () => applicationHandler({ ...event, rawPath: "/" + parts.slice(2).map(encodeURIComponent).join("/") }));
+  } catch (error) {
+    if (error.name !== "ConditionalCheckFailedException") console.error(error);
+    return json(event, error.name === "ConditionalCheckFailedException" ? 409 : error.message === "invalid_json" ? 400 : 500,
+      { error: error.name === "ConditionalCheckFailedException" ? "tenant_exists" : error.message === "invalid_json" ? "invalid_json" : "unexpected_error" });
   }
 }

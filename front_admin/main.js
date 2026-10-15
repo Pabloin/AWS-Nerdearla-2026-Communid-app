@@ -1,9 +1,10 @@
+import { tenantApiBase, tenantId } from "../shared/tenant.js";
 import "./styles.css";
 
 const homeUrl = import.meta.env.VITE_HOME_URL || "/";
 
 const state = {
-  apiBase: import.meta.env.VITE_API_BASE_URL || "",
+  apiBase: tenantApiBase(import.meta.env.VITE_API_BASE_URL),
   token: "",
   profiles: [],
   image: "",
@@ -89,7 +90,7 @@ $("#login-form").addEventListener("submit", (event) => {
     state.apiBase = $("#api-url").value.trim().replace(/\/$/, "");
     state.token = $("#admin-token").value.trim();
     const session = await api("/admin/session");
-    $("#environment").textContent = session.eventId.toUpperCase();
+    $("#environment").textContent = (tenantId || session.eventId).toUpperCase();
     $("#login-panel").hidden = true;
     $("#workspace").hidden = false;
     $("#logout").hidden = false;

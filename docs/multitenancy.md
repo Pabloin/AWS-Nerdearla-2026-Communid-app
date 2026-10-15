@@ -66,7 +66,7 @@ el alta y listado de tenants y un token de administración por tenant.
   configurable de experiencias.
 - Despliegue acordado: workflow exclusivo de GitHub Actions para tenants,
   usando el secreto Cloudflare existente y OIDC para AWS, con pruebas y revisión
-  del plan antes de aplicar. Ese workflow todavía no está implementado ni ejecutado.
+  del plan antes de aplicar. El workflow está preparado en `.github/workflows/tenants.yml`; el despliegue todavía no se ejecutó.
 
 El siguiente hito es validar Argentina como primer tenant del stack nuevo,
 manteniendo Argentina actual operativa, y después incorporar la variante de países.
@@ -173,7 +173,22 @@ El camino de despliegue acordado es GitHub Actions, con un workflow y un
 environment propios de tenants para registrar commit, ejecución, plan y resultado.
 Se usará `COMUNID_CLOUDFLARE_API_TOKEN` dentro de Actions, sin extraer su valor
 a una terminal local. El workflow de Argentina conserva su destino actual.
-La implementación de ese workflow está pendiente.
+El workflow está preparado en `.github/workflows/tenants.yml`. Recibe el SHA
+exacto del código de `feat/multitenant`. La primera ejecución usa `deploy=false`
+y publica un resumen y una huella SHA-256 del plan. Para aplicar, una segunda
+ejecución recibe el mismo commit, `deploy=true` y `reviewed_plan_sha` con la
+huella revisada; rechaza diferencias. El ZIP de Lambda usa timestamps fijos para
+que ambos planes sean comparables. No se publican archivos de estado ni secretos
+como artefactos.
+
+El acceso OIDC nuevo está definido en
+`terraform-bootstrap/bootstrap-tenants-role.py`. La confianza se restringe al
+repositorio y al environment `tenants`. El stack nuevo desactiva los roles CICD
+administrativos generales y solo crea el rol de ejecución de su Lambda. La
+política de bootstrap contempla recursos nuevos, estado exclusivo, certificados y
+distribución nuevos, y deniega explícitamente cambios en la distribución,
+función y certificado de Argentina. Su creación requiere autorización y aún
+no se ejecutó; la revisión automática rechazó una propuesta anterior más amplia.
 
 Los scripts locales ya preparados quedan como herramienta manual alternativa;
 no representan un despliegue ya ejecutado. Para preparar un plan local se

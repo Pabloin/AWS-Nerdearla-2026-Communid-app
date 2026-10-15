@@ -241,7 +241,9 @@ See [the multitenancy guide](docs/multitenancy.md) for access, local development
 isolation, deployment, and current limitations. The domains require deployment
 of the Terraform and application changes before they become available.
 The agreed deployment path is a dedicated GitHub Actions workflow using the
-existing Cloudflare secret and AWS OIDC; that workflow is still pending.
+existing Cloudflare secret and AWS OIDC. The workflow is prepared at
+`.github/workflows/tenants.yml`, with a pinned source commit and a reviewed plan
+digest required before apply; deployment has not run yet.
 `./scripts/deploy-tenants.sh plan` remains a manual local alternative. Do not use
 the Argentina production deployment script or workflow for the tenant stack.
 

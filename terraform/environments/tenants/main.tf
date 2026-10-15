@@ -5,6 +5,7 @@ module "comunid" {
     aws             = aws
     aws.certificate = aws.us_east_1
   }
+  enable_cicd   = false
   project_name  = "comunid-tenants"
   environment   = "production"
   domain_name   = "tenants.comunid.app"

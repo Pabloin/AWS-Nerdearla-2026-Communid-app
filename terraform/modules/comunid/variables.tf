@@ -32,3 +32,9 @@ variable "unmanaged_certificate_domains" {
   type        = set(string)
   default     = []
 }
+
+variable "enable_cicd" {
+  type        = bool
+  default     = true
+  description = "Create the legacy GitHub IAM roles. The isolated tenants workflow uses its own restricted role."
+}

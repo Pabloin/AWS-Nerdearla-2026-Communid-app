@@ -61,7 +61,13 @@ module "api" {
   tags              = local.tags
 }
 
+moved {
+  from = module.cicd
+  to   = module.cicd[0]
+}
+
 module "cicd" {
+  count                    = var.enable_cicd ? 1 : 0
   source                   = "../cicd"
   project_name             = var.project_name
   environment              = var.environment

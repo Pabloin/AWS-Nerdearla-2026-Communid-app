@@ -54,7 +54,7 @@ resource "aws_iam_role_policy" "infra" {
       {
         Effect = "Allow"
         Action = [
-          "acm:*", "apigateway:*", "cloudfront:*", "cognito-idp:*", "dynamodb:*", "iam:*",
+          "acm:*", "apigateway:*", "cloudfront:*", "dynamodb:*", "iam:*",
           "lambda:*", "logs:*", "rekognition:*", "resource-groups:*",
           "s3:*", "secretsmanager:*", "sts:GetCallerIdentity"
         ]

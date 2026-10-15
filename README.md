@@ -84,6 +84,7 @@ The Lambda exposes:
 - `PUT /guests/me/contact`, `DELETE /guests/me/contact` — optional email opt-in after five encounters, and withdrawal
 - `GET /heroes/live` — currently shared hero locations, visible for two minutes after the last update
 - `GET /heroes/me`, `PUT /heroes/me/location`, `DELETE /heroes/me/location` — private hero link required
+- `PUT /community/me/profile` — lets a registered community member update their public name
 - `GET /admin/session` and `GET /admin/profiles`
 - `POST /admin/profiles`
 - `POST /admin/heroes/{profileId}/link` — issues or rotates a private location-sharing link for a consented Hero profile

@@ -1,2 +1,45 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@400;600&display=swap');
-:root{font-family:'DM Sans',sans-serif;color:#152020;background:#f6f7f2}*{box-sizing:border-box}body{margin:0}header{display:flex;align-items:center;gap:24px;padding:24px 6%;border-bottom:1px solid #dce1d6}header>a{font:600 30px 'Space Grotesk',sans-serif;color:inherit;text-decoration:none}header span{color:#547f18;margin-left:8px}header small{letter-spacing:2px}header button{margin-left:auto}main{max-width:1080px;margin:60px auto;padding:0 24px}.eyebrow{font-size:12px;letter-spacing:2px}h1{font:600 clamp(34px,6vw,62px)/1.1 'Space Grotesk',sans-serif;letter-spacing:-2px}em{font-style:normal;color:#577a24}main>p{max-width:600px;color:#526052;line-height:1.6}section{background:white;border:1px solid #dce1d6;border-radius:20px;padding:28px;margin:28px 0}h2{font:600 24px 'Space Grotesk',sans-serif;margin-top:0}form{display:flex;flex-wrap:wrap;align-items:start;gap:20px}label{display:grid;gap:8px;flex:1;min-width:200px;font-size:14px}input,textarea{font:inherit;border:1px solid #bdc7b8;border-radius:8px;padding:12px;width:100%}small{color:#526052}button{background:#173d2d;color:white;border:0;border-radius:8px;padding:13px 20px;font:700 14px 'DM Sans',sans-serif;cursor:pointer}form button{margin-top:25px}button:disabled{opacity:.5;cursor:wait}article{padding:20px 0;border-top:1px solid #dce1d6}article h3{margin:0}article a{display:inline-block;color:#245f39;margin:4px 24px 4px 0}textarea{margin-bottom:16px;resize:vertical}#credentials{border-color:#749b38;background:#f0f8df}#status{min-height:24px}[hidden]{display:none!important}input:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:3px solid #82ad4a;outline-offset:3px}
+/* The public site owns the brand, type, header, hero and footer styles. */
+.tenants-page [hidden]{display:none!important}
+.tenants-page .site-header nav .tenant-current{color:#8439e5}
+.tenants-page .site-header button{border:0;cursor:pointer;font-weight:700}
+.tenants-main .hero-inner{min-height:600px;grid-template-columns:minmax(0,1.25fr) minmax(320px,.85fr);gap:64px;padding-top:64px;padding-bottom:64px}
+.tenants-main .hero h1{font-size:clamp(3rem,4.5vw,4.6rem)}
+.tenant-access{position:relative;padding:34px;background:var(--paper);color:var(--ink);border:1px solid #ffffff30;border-radius:16px;box-shadow:0 24px 70px #0003}
+.tenant-access .section-kicker{font-size:.6rem;line-height:1.6;margin-bottom:18px}
+.tenant-access h2{font-size:2.35rem;line-height:1.13}
+.tenant-access h2 span,.tenant-section-heading h2 span{color:#8b4ddd}
+.tenant-access>p:not(.section-kicker){margin-top:18px;color:#626476;font-size:.88rem;line-height:1.7}
+.tenant-access form{display:grid;gap:10px;margin-top:26px}
+.tenants-main label{font-size:.8rem;font-weight:700}
+.tenants-main input,.tenants-main textarea{width:100%;min-width:0;padding:13px 14px;border:1px solid #d1ccdc;border-radius:7px;background:#fff;color:var(--ink);font:inherit;font-size:.94rem}
+.tenant-access .button{width:100%;margin-top:8px}
+.tenants-main button{border:0;cursor:pointer}
+.tenants-main button:disabled{opacity:.55;cursor:wait}
+.tenants-main input:focus-visible,.tenants-main textarea:focus-visible,.tenants-page a:focus-visible,.tenants-page button:focus-visible{outline:3px solid #a35cff;outline-offset:4px}
+.tenant-session .button{margin-top:26px}
+.tenant-content{padding-top:20px;padding-bottom:32px}
+#status{color:#713db3;line-height:1.6;overflow-wrap:anywhere}
+#status:not(:empty){padding:18px 0}
+.tenant-section{padding:48px 0;border-bottom:1px solid var(--line)}
+.tenant-section-heading{margin-bottom:28px}
+.tenant-section-heading .section-kicker{margin-bottom:14px}
+.tenant-section h2{font-size:clamp(2rem,3.2vw,3rem);line-height:1.15}
+.tenant-section-heading>p:last-child:not(.section-kicker){margin-top:16px;color:#626476;line-height:1.7}
+#create-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;align-items:start}
+#create-form label{display:grid;gap:10px}
+#create-form small{color:#757585;font-size:.73rem;font-weight:400;line-height:1.5}
+#create-form button{grid-column:1/-1;justify-self:start}
+#list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+#list article{padding:28px;border:1px solid var(--line);border-radius:12px;background:#fff}
+#list h3{font-size:1.5rem;overflow-wrap:anywhere}
+#list p{margin:10px 0 22px;color:#757585;font-size:.85rem;overflow-wrap:anywhere}
+#list a{display:inline-block;margin:8px 22px 0 0;padding-bottom:5px;border-bottom:1px solid #c3a6e9;color:#713db3;font-size:.8rem;font-weight:700}
+#list a:hover{color:#a35cff}
+.tenant-credentials{margin-top:28px;padding:28px;border:1px solid #d8c1f5;border-radius:12px;background:#f0e8fc}
+.tenant-credentials h2{font-size:1.65rem}
+.tenant-credentials p{margin:16px 0;color:#626476;line-height:1.7}
+.tenant-credentials textarea{display:block;resize:vertical;min-height:90px;margin-bottom:16px}
+.tenant-secondary{background:var(--night);color:white}
+.tenants-page .site-footer{border-top:1px solid var(--line)}
+@media(max-width:1000px){.tenants-main .hero-inner{gap:32px;grid-template-columns:minmax(0,1fr) minmax(300px,.9fr)}.tenant-access{padding:26px}.tenants-main .hero h1{font-size:3.25rem}}
+@media(max-width:700px){.tenants-page .site-header nav{display:flex;position:static;flex-direction:row;align-items:center;gap:14px;padding:0;border:0;box-shadow:none;background:transparent}.tenants-page .site-header nav>a{padding:0;font-size:.73rem;border:0}.tenants-page .site-header nav>a:first-child{display:none}.tenants-page .site-header nav .nav-cta{margin:0;padding:9px 12px}.tenants-page .site-header .brand{width:145px}.tenants-main .hero-inner{display:grid;grid-template-columns:1fr;min-height:0;padding:48px 22px 36px;gap:32px}.tenants-main .hero h1{font-size:clamp(2.7rem,9vw,3.7rem)}.tenant-access{padding:26px}.tenant-access h2{font-size:2.1rem}.tenant-content{padding-top:12px;padding-bottom:16px}.tenant-section{padding:34px 0}#create-form,#list{grid-template-columns:1fr}.tenants-main .hero-bottom{padding-top:0;font-size:.5rem}.tenants-page .site-footer small{border:0;padding-left:0}}

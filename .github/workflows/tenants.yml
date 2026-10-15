@@ -1,0 +1,147 @@
+name: Comunid Tenants
+run-name: Tenants · ${{ inputs.deploy && 'deploy' || 'plan' }} · ${{ inputs.source_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact commit SHA from feat/multitenant to test and deploy
+        type: string
+        required: true
+      deploy:
+        description: Apply the reviewed initial tenants plan and publish
+        type: boolean
+        required: true
+        default: false
+      reviewed_plan_sha:
+        description: SHA-256 shown by the reviewed plan-only run (required to apply)
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: comunid-tenants
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+  TF_DIR: terraform/environments/tenants
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: 'false'
+
+jobs:
+  tenants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: tenants
+      url: https://tenants.comunid.app
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      DEPLOY: ${{ inputs.deploy }}
+      REVIEWED_PLAN_SHA: ${{ inputs.reviewed_plan_sha }}
+      TF_VAR_github_owner: ${{ github.repository_owner }}
+      TF_VAR_github_owner_id: ${{ github.repository_owner_id }}
+      TF_VAR_github_repo: ${{ github.event.repository.name }}
+      TF_VAR_github_repo_id: ${{ github.repository_id }}
+      TF_VAR_cloudflare_zone_id: ${{ secrets.COMUNID_CLOUDFLARE_ZONE_ID }}
+      TF_VAR_aws_region: us-east-2
+    steps:
+      - name: Validate pinned source
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$DEPLOY" == true ]]; then [[ "$REVIEWED_PLAN_SHA" =~ ^[0-9a-f]{64}$ ]]; fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Verify release branch
+        run: |
+          git fetch origin feat/multitenant
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/feat/multitenant
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - run: npm ci
+      - run: npm run check
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - run: npm --workspace @comunid/backend run package
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::442809140287:role/comunid-tenants-github-bootstrap
+          role-session-name: tenants-${{ github.run_id }}
+          aws-region: us-east-2
+          allowed-account-ids: '442809140287'
+      - name: Verify account and preserve Argentina baseline
+        run: |
+          test "$(aws sts get-caller-identity --query Account --output text)" = 442809140287
+          aws cloudfront get-distribution-config --id E2DYSZ3ARR9EVF --query ETag --output text > /tmp/argentina-etag
+      - name: Initialize independent state and generate plan
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.COMUNID_CLOUDFLARE_API_TOKEN }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$TF_VAR_cloudflare_zone_id"
+          terraform init -input=false \
+            -backend-config=bucket=comunid-terraform-state-442809140287 \
+            -backend-config=key=comunid/tenants/terraform.tfstate \
+            -backend-config=region=us-east-1 \
+            -backend-config=encrypt=true \
+            -backend-config=use_lockfile=true
+          terraform validate
+          terraform plan -input=false -out=tenants.tfplan
+          terraform show -json tenants.tfplan > /tmp/tenants-plan.json
+      - name: Validate resource ownership and reviewed plan
+        run: python3 scripts/review-tenants-plan.py /tmp/tenants-plan.json
+      - name: Apply independent stack
+        if: inputs.deploy
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.COMUNID_CLOUDFLARE_API_TOKEN }}
+        run: terraform apply -input=false -auto-approve tenants.tfplan
+      - name: Capture and validate new stack outputs
+        if: inputs.deploy
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          test "$(terraform output -raw lambda_name)" = comunid-tenants-production-api
+          test "$(terraform output -raw web_bucket_name)" = comunid-tenants-production-web-442809140287
+          echo "VITE_API_BASE_URL=$(terraform output -raw api_url)" >> "$GITHUB_ENV"
+          echo "VITE_COGNITO_USER_POOL_ID=$(terraform output -raw cognito_user_pool_id)" >> "$GITHUB_ENV"
+          echo "VITE_COGNITO_CLIENT_ID=$(terraform output -raw cognito_client_id)" >> "$GITHUB_ENV"
+          echo "TENANTS_WEB_BUCKET=$(terraform output -raw web_bucket_name)" >> "$GITHUB_ENV"
+          echo "TENANTS_DISTRIBUTION=$(terraform output -raw distribution_id)" >> "$GITHUB_ENV"
+      - name: Build tenant applications
+        if: inputs.deploy
+        env:
+          VITE_APP_URL: https://tenants.comunid.app/
+          VITE_PUBLIC_APP_URL: https://tenants.comunid.app
+          VITE_HOME_URL: https://comunid.app/
+          VITE_TENANT_DOMAIN: comunid.app
+          VITE_MOBILE_BASE: /app/
+          VITE_ADMIN_BASE: /admin/
+        run: npm run build
+      - name: Publish exclusively to the new bucket
+        if: inputs.deploy
+        run: |
+          aws s3 sync front_home/dist "s3://$TENANTS_WEB_BUCKET" --delete --exclude 'app/*' --exclude 'admin/*'
+          aws s3 sync front_mobile/dist "s3://$TENANTS_WEB_BUCKET/app" --delete
+          aws s3 sync front_admin/dist "s3://$TENANTS_WEB_BUCKET/admin" --delete
+          aws cloudfront create-invalidation --distribution-id "$TENANTS_DISTRIBUTION" --paths '/*' >/dev/null
+          curl --fail --retry 5 --retry-delay 10 "$VITE_API_BASE_URL/health"
+          echo 'Published: https://tenants.comunid.app' >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify Argentina distribution stayed unchanged
+        if: always()
+        run: |
+          if [[ -f /tmp/argentina-etag ]]; then
+            test "$(cat /tmp/argentina-etag)" = "$(aws cloudfront get-distribution-config --id E2DYSZ3ARR9EVF --query ETag --output text)"
+          fi

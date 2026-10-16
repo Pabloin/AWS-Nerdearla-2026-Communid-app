@@ -30,7 +30,8 @@ Plataforma nueva · stack tenants · us-east-2
 ```
 
 `tenants.comunid.app` y `argentina.comunid.app` están publicados.
-Paraguay y re:Invent son experiencias previstas; todavía no están dadas de alta.
+El tenant re:Invent también está dado de alta. Su variante de países y Android
+se desarrollan en `feat/reinvent-android`; Paraguay todavía no está dado de alta.
 La Argentina nueva empieza con sus propios participantes, perfiles, pasaportes
 y encuentros. No se copian datos ni cuentas desde Argentina actual, no se
 redirigen sus dominios y no se reemplazan sus QR. Una eventual migración o
@@ -62,8 +63,9 @@ el alta y listado de tenants y un token de administración por tenant.
 - Preparado en código: separación por tenant, panel básico de alta/listado,
   enlaces por subdominio y configuración del stack independiente.
 - Publicado: panel y tenant Argentina vacío en el stack nuevo.
-- Pendiente: cargar participantes, separar la variante de Heroes
-  y desarrollar la variante de países y su mapa. La aplicación preparada aún
+- Implementado para re:Invent: país de origen, QR propio y mapa de países recolectados
+  (beta 0.2.0). Ver [pasaporte de países](country-passport.md).
+- Pendiente: cargar participantes y separar la variante de Heroes. La aplicación preparada aún
   conserva lógica y pantallas de la experiencia original; no es un motor
   configurable de experiencias.
 - Despliegue acordado: workflow exclusivo de GitHub Actions para tenants,
@@ -71,7 +73,7 @@ el alta y listado de tenants y un token de administración por tenant.
   del plan antes de aplicar. El workflow está registrado en `.github/workflows/tenants.yml`; las ejecuciones y sus resultados quedan en Actions.
 
 El siguiente hito es probar el flujo completo con participantes de Argentina
-nueva y después incorporar la variante de países. Argentina actual sigue operativa.
+nueva y validar la variante de países de re:Invent. Argentina actual sigue operativa.
 
 ## Uso
 
@@ -307,5 +309,5 @@ No se crearon participantes de prueba ni se copiaron datos anteriores.
 La distribución original `E2DYSZ3ARR9EVF` conservó su ETag
 `E2EUQ1WTGCTBG2` y todos sus aliases. Su API respondió saludable con
 `eventId=nerdearla-2026`. Los dominios originales se comprobaron por HTTPS.
-La base sigue lista para la experiencia de personas; la variante de países y
-el mapa mundial continúan pendientes de implementación.
+Ese primer despliegue correspondió a la experiencia de personas. La variante
+de países se implementó después para re:Invent; ver `country-passport.md`.

@@ -45,3 +45,52 @@
 /* Capacitor supplies these insets for Android status/gesture bars and cutouts. */
 .native-android .app-shell{padding-top:var(--safe-area-inset-top,env(safe-area-inset-top,0px));padding-bottom:calc(92px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)));padding-left:var(--safe-area-inset-left,env(safe-area-inset-left,0px));padding-right:var(--safe-area-inset-right,env(safe-area-inset-right,0px))}
 .native-android .bottom-nav{bottom:calc(8px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)));max-width:calc(100% - 20px - var(--safe-area-inset-left,0px) - var(--safe-area-inset-right,0px))}
+
+/* re:Invent country collection; other experiences keep the people passport. */
+.country-select{display:block;width:100%;min-height:52px;margin:8px 0 18px;padding:10px 12px;border:1px solid #6b468d;border-radius:10px;background:#222039;color:#f6efff;font:inherit}
+.country-consent{display:flex!important;align-items:flex-start;gap:10px;margin:18px 0!important;color:#c7bad8!important;font-size:.76rem!important;line-height:1.6}
+.country-consent input{flex:none;width:18px;height:18px;margin-top:3px;accent-color:#ad66f0}
+.country-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:24px 0}
+.country-stats>div{padding:18px;border:1px solid #60467d;border-radius:14px;background:linear-gradient(140deg,#332443,#211e33)}
+.country-stats strong{display:block;color:#c98fff;font:800 2.6rem Manrope,sans-serif;line-height:1.2}
+.country-stats span{display:block;margin-top:7px;color:#bfb0ce;font-size:.76rem}
+.world-map-card{padding:16px;border:1px solid #5a4674;border-radius:16px;background:#1b1c2e}
+.world-map-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.world-map-heading h2{font-size:1.05rem;margin:0}
+.world-map-heading>div{display:flex;gap:6px}
+.world-map-heading button{width:34px;height:34px;border:1px solid #6d4d8a;border-radius:8px;background:#30213f;color:#e4c3ff;font-size:1.3rem}
+.world-map-heading button:disabled{opacity:.4}
+.world-map-scroll{overflow:auto;margin:12px -8px 0;border-radius:10px;max-height:380px;overscroll-behavior:contain}
+.world-map-scroll svg{display:block;height:auto;min-width:100%}
+.world-map-scroll path{stroke:#17182a;stroke-width:.8;vector-effect:non-scaling-stroke}
+.country-locked{fill:#48465b}
+.country-earned{fill:#af67fa;cursor:pointer}
+.country-earned:hover,.country-earned:focus,.country-selected{fill:#e0b4ff;stroke:#fff!important;outline:none}
+.world-map-legend{display:flex;gap:8px;align-items:center;font-size:.7rem;color:#cdb9df;margin:12px 0}
+.world-map-legend span{width:10px;height:10px;border-radius:3px;background:#af67fa}
+.country-map-selection{min-height:34px;margin:0;font-size:.76rem;line-height:1.5;color:#dec3f5}
+.world-map-credit{display:block;font-size:.58rem;line-height:1.6;color:#a89abb}
+.world-map-credit a{text-decoration:underline;color:inherit}
+.country-collection{margin:28px 0}
+.country-collection h2{font-size:1.3rem}
+.country-collection>button,.country-person{display:flex;align-items:center;gap:12px;width:100%;margin:10px 0;padding:13px;border:1px solid #5b4471;border-radius:12px;background:#252037;text-align:left}
+.country-collection>button[aria-pressed=true]{border-color:#c58cff;background:#39284c}
+.country-collection>button>span:nth-child(2),.country-person>span:nth-child(2){flex:1;min-width:0}
+.country-collection strong,.country-person strong{display:block;overflow-wrap:anywhere;font-size:.86rem}
+.country-collection small,.country-person small{display:block;margin-top:4px;color:#bca9cd;font-size:.72rem}
+.country-code{display:grid;place-items:center;width:40px;height:40px;flex:none;border-radius:10px;background:#5a3479;color:#e2b5ff;font-weight:800;font-size:.8rem}
+.country-person svg{flex:none;color:#bca9cd}
+.country-empty{padding:18px;border:1px dashed #675079;border-radius:12px;color:#b8a8c8;font-size:.8rem;line-height:1.6}
+.country-note{margin:22px 0;font-size:.7rem;line-height:1.6;color:#ad9dbe}
+.own-badge{margin:26px 0;padding:22px;border:1px solid #755193;border-radius:16px;background:radial-gradient(circle at top,#3a2857,#211d31 75%);text-align:center}
+.own-badge h2{font-size:1.5rem;margin-bottom:7px;overflow-wrap:anywhere}
+.own-badge p{font-size:.9rem;color:#c9addf}
+.own-badge>img{display:block;width:240px;max-width:100%;height:auto;margin:20px auto;border-radius:12px}
+.own-badge small{display:block;color:#baabc8;font-size:.76rem;line-height:1.6}
+.country-discover{margin-top:26px}
+.country-discover h2{font-size:1.3rem;margin-top:28px}
+.country-discover-actions{padding:16px;border:1px solid #684b84;border-radius:14px;background:#252037}
+.country-discover-actions .text-button{padding-bottom:0}
+.country-select:focus-visible,.world-map-heading button:focus-visible,.country-collection button:focus-visible,.country-person:focus-visible,.world-map-scroll:focus-visible{outline:2px solid #d6a5ff;outline-offset:3px}
+
+.country-encounters{padding:0;list-style:none;margin:8px 0 18px}.country-encounters li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #453354;font-size:.78rem}.country-encounters small{flex:none;color:#ac98c0;font-size:.68rem}

@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import { tenantContext, tenant, scopedDatabase, validTenantId } from "./tenancy.mjs";
 import { demoProfiles } from "./demo-profiles.mjs";
 import { encounterKeys, normalizeProfile, publicProfileUrl } from "./domain.mjs";
+import { countryCode, countryExperience } from "../../shared/countries.js";
 import { imageBytes, rekognitionUserId } from "./face-image.mjs";
 
 const tableName = process.env.TABLE_NAME || "comunid-local";
@@ -19,6 +20,7 @@ const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS || "http://127.0.0.1
 const heroLocationLifetimeMs = 10 * 60 * 1000;
 const rawDatabase = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const database = scopedDatabase(rawDatabase);
+const collectsCountries = () => countryExperience(tenant()?.id);
 const currentEventId = () => tenant()?.eventId || defaultEventId;
 const tenantDomain = process.env.TENANT_DOMAIN || "comunid.app";
 const currentAppUrl = () => tenant() ? `https://${tenant().id}.${tenantDomain}` : publicAppUrl;
@@ -84,7 +86,9 @@ function guestPublic(item) {
     name: item.name,
     email: item.email || null,
     contactConsent: item.contactConsent === true,
-    eventId: item.eventId
+    eventId: item.eventId,
+    ...(item.countryCode ? { countryCode: item.countryCode } : {}),
+    ...(item.profileId ? { profileId: item.profileId, profileConsent: item.profileConsent === true } : {})
   };
 }
 
@@ -112,19 +116,32 @@ async function createGuest(event) {
   if (email.length > 254 || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
     return json(event, 422, { error: "guest_email_invalid" });
   }
+  const input = parseBody(event);
+  const selectedCountry = countryCode(input.countryCode);
+  if (collectsCountries() && selectedCountry && input.profileConsent !== true) return json(event, 422, { error: "public_profile_consent_required" });
   const guestId = randomUUID();
   const secret = randomBytes(32).toString("base64url");
   const tokenHash = createHash("sha256").update(secret).digest("hex");
   const item = {
     pk: `GUEST#${guestId}`, sk: "PROFILE", entityType: "GUEST", guestId,
     eventId: currentEventId(), name, ...(email ? { email } : {}), tokenHash, contactConsent: false,
+    ...(selectedCountry ? { countryCode: selectedCountry } : {}),
+    ...(collectsCountries() && selectedCountry ? { profileId: `member-${guestId}`, profileConsent: true } : {}),
     createdAt: new Date().toISOString()
   };
   await database.send(new PutCommand({
     TableName: tableName, Item: item,
     ConditionExpression: "attribute_not_exists(pk) AND attribute_not_exists(sk)"
   }));
+  if (item.profileId) await publishGuestProfile(item);
   return json(event, 201, { guest: guestPublic(item), token: `${guestId}.${secret}` });
+}
+
+async function publishGuestProfile(guest) {
+  if (!guest.profileConsent || !guest.countryCode || !guest.profileId) return;
+  const existing = await persistedProfile(guest.profileId);
+  const profile = { id: guest.profileId, name: guest.name, role: "builder", title: "Participante de re:Invent", city: "", community: "re:Invent", superpower: "", askMeAbout: "", story: "", color: "#A35CFF", consent: true, faceConsent: existing?.faceConsent === true, countryCode: guest.countryCode };
+  await database.send(new PutCommand({ TableName: tableName, Item: { pk: `EVENT#${currentEventId()}`, sk: `PROFILE#${profile.id}`, entityType: "PROFILE", eventId: currentEventId(), ...profile, createdAt: existing?.createdAt || guest.createdAt, updatedAt: new Date().toISOString() } }));
 }
 
 async function heroFromRequest(event) {
@@ -196,7 +213,9 @@ async function registerCommunityMember(event) {
   const profileId = `member-${randomUUID()}`;
   const secret = randomBytes(32).toString("base64url");
   const timestamp = new Date().toISOString();
-  const profile = { id: profileId, name, role, title: community, city: "", community,
+  const selectedCountry = countryCode(input.countryCode);
+  if (collectsCountries() && !selectedCountry) return json(event, 422, { error: "country_required" });
+  const profile = { ...(selectedCountry ? { countryCode: selectedCountry } : {}), id: profileId, name, role, title: community, city: "", community,
     superpower: "", askMeAbout: "", story: "", color: "#C8FF3D", consent: true, faceConsent: false };
   const photo = String(input.photoDataUrl || "");
   let photoItem;
@@ -342,6 +361,25 @@ async function guestRoute(event, method, parts) {
   if (method === "GET" && parts[1] === "me" && parts.length === 2) {
     return json(event, 200, { guest: guestPublic(guest) });
   }
+  if (method === "PUT" && parts[1] === "me" && parts[2] === "profile" && parts.length === 3) {
+    const input = parseBody(event);
+    const name = String(input.name || "").trim().replace(/\s+/g, " ");
+    const email = String(input.email || "").trim().toLowerCase();
+    if (name.length < 2 || name.length > 60 || /[\x00-\x1f\x7f]/.test(name)) return json(event, 422, { error: "guest_name_invalid" });
+    if (email.length > 254 || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return json(event, 422, { error: "guest_email_invalid" });
+    const selectedCountry = countryCode(input.countryCode ?? guest.countryCode);
+    const publish = collectsCountries() && (input.profileConsent === true || guest.profileConsent === true);
+    if (publish && !selectedCountry) return json(event, 422, { error: "country_required" });
+    const fields = { name, email: email || null, updatedAt: new Date().toISOString(), ...(selectedCountry ? { countryCode: selectedCountry } : {}), ...(publish ? { profileConsent: true, profileId: `member-${guest.guestId}` } : {}) };
+    const entries = Object.entries(fields);
+    const result = await database.send(new UpdateCommand({ TableName: tableName, Key: { pk: guest.pk, sk: guest.sk },
+      UpdateExpression: "SET " + entries.map(([key], i) => `#f${i} = :v${i}`).join(", "),
+      ExpressionAttributeNames: Object.fromEntries(entries.map(([key], i) => [`#f${i}`, key])),
+      ExpressionAttributeValues: Object.fromEntries(entries.map(([, value], i) => [`:v${i}`, value])),
+      ConditionExpression: "attribute_exists(pk) AND attribute_exists(sk)", ReturnValues: "ALL_NEW" }));
+    if (result.Attributes.profileId) await publishGuestProfile(result.Attributes);
+    return json(event, 200, { guest: guestPublic(result.Attributes) });
+  }
   if (parts[1] === "me" && parts[2] === "encounters" && parts.length === 3) {
     if (method === "GET") {
       return json(event, 200, { eventId: currentEventId(), encounters: await guestEncounters(guest.guestId) });
@@ -354,15 +392,24 @@ async function guestRoute(event, method, parts) {
         profileId: input.profileId
       });
       if (!(await profileExists(keys.profileId))) return json(event, 404, { error: "profile_not_found" });
+      const profile = collectsCountries() ? await persistedProfile(keys.profileId) : null;
+      if (collectsCountries() && keys.profileId === guest.profileId) return json(event, 422, { error: "self_encounter_not_allowed" });
+      if (collectsCountries() && !countryCode(profile?.countryCode)) return json(event, 422, { error: "participant_country_required" });
+      const snapshot = collectsCountries() ? { countryCode: countryCode(profile.countryCode), profileName: profile.name } : {};
       const timestamp = new Date().toISOString();
+      let recorded = { ...keys, entityType: "ENCOUNTER", collectedAt: timestamp, ...snapshot };
       await database.send(new PutCommand({
         TableName: tableName,
-        Item: { ...keys, entityType: "ENCOUNTER", collectedAt: timestamp },
+        Item: recorded,
         ConditionExpression: "attribute_not_exists(pk) AND attribute_not_exists(sk)"
-      })).catch((error) => {
+      })).catch(async (error) => {
         if (error.name !== "ConditionalCheckFailedException") throw error;
+        if (collectsCountries()) {
+          const existing = await database.send(new GetCommand({ TableName: tableName, Key: { pk: keys.pk, sk: keys.sk } }));
+          recorded = existing.Item || recorded;
+        }
       });
-      return json(event, 201, { ...keys, collectedAt: timestamp });
+      return json(event, 201, recorded);
     }
   }
   if (parts[1] === "me" && parts[2] === "contact" && parts.length === 3) {
@@ -609,12 +656,12 @@ async function updateFaceConsent(event, profileId) {
 }
 
 async function listProfiles(event) {
-  const result = await database.send(new QueryCommand({
+  const items = await queryAll({
     TableName: tableName,
     KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
     ExpressionAttributeValues: { ":pk": `EVENT#${currentEventId()}`, ":prefix": "PROFILE#" }
-  }));
-  const profiles = (result.Items || []).filter((item) => item.consent === true).map(profileFromItem);
+  });
+  const profiles = items.filter((item) => item.consent === true).map((item) => profileFromItem(item));
   const ids = new Set(profiles.map((profile) => profile.id));
   return json(event, 200, { eventId: currentEventId(), profiles: [
     ...profiles, ...currentDemoProfiles().filter((profile) => !ids.has(profile.id))
@@ -701,16 +748,16 @@ async function applicationHandler(event) {
   const parts = routeParts(event);
 
   try {
-    if (method === "GET" && parts[0] === "health") return json(event, 200, { service: "comunid-api", status: "ok", eventId: currentEventId(), ...(tenant() ? { tenant: { id: tenant().id, name: tenant().name } } : {}) });
-    if (parts[0] === "community") return communityRoute(event, method, parts);
-    if (parts[0] === "guests") return guestRoute(event, method, parts);
+    if (method === "GET" && parts[0] === "health") return json(event, 200, { service: "comunid-api", status: "ok", eventId: currentEventId(), ...(tenant() ? { tenant: { id: tenant().id, name: tenant().name, collection: collectsCountries() ? "countries" : "people" } } : {}) });
+    if (parts[0] === "community") return await communityRoute(event, method, parts);
+    if (parts[0] === "guests") return await guestRoute(event, method, parts);
     if (parts[0] === "heroes") return heroRoute(event, method, parts);
     if (parts[0] === "admin") {
       if (!(await adminAuthorized(event))) return json(event, 401, { error: "admin_authorization_required" });
       if (method === "GET" && parts[1] === "session") return json(event, 200, { authorized: true, faceCollectionConfigured: Boolean(currentFaceCollection()), eventId: currentEventId() });
       if (method === "POST" && parts[1] === "heroes" && parts[2] && parts[3] === "link" && parts.length === 4) return createHeroLink(event, parts[2]);
       if (method === "GET" && parts[1] === "profiles" && !parts[2]) return managedProfiles(event);
-      if (method === "POST" && parts[1] === "profiles" && !parts[2]) return createProfile(event);
+      if (method === "POST" && parts[1] === "profiles" && !parts[2]) return await createProfile(event);
       if (method === "PUT" && parts[1] === "profiles" && parts[2] && parts[3] === "face-consent") return updateFaceConsent(event, parts[2]);
       if (method === "GET" && parts[1] === "profiles" && parts[2] && parts[3] === "faces" && !parts[4]) return profileFaces(event, parts[2]);
       if (parts[1] === "faces" || parts[1] === "detect-faces" || parts[1] === "search-faces" || parts[3] === "faces") {
@@ -724,7 +771,7 @@ async function applicationHandler(event) {
       return json(event, 404, { error: "not_found" });
     }
     if (method === "GET" && parts[0] === "profiles" && !parts[1]) return listProfiles(event);
-    if (method === "POST" && parts[0] === "profiles" && !parts[1]) return createProfile(event);
+    if (method === "POST" && parts[0] === "profiles" && !parts[1]) return await createProfile(event);
     if (method === "GET" && parts[0] === "profiles" && parts[1] && parts[2] === "photo") {
       const result = await database.send(new GetCommand({ TableName: tableName, Key: { pk: `PROFILE#${parts[1]}`, sk: "PHOTO" } }));
       if (!result.Item?.imageBase64) return json(event, 404, { error: "photo_not_found" });
@@ -739,7 +786,7 @@ async function applicationHandler(event) {
   } catch (error) {
     console.error(error);
     const message = error instanceof Error ? error.message : "unexpected_error";
-    const clientError = ["invalid_json", "invalid_profile_role", "profile_name_required", "encounter_fields_required", "invalid_image", "image_too_large", "profile_id_required", "invalid_face_consent"].includes(message);
+    const clientError = ["invalid_country", "invalid_json", "invalid_profile_role", "profile_name_required", "encounter_fields_required", "invalid_image", "image_too_large", "profile_id_required", "invalid_face_consent"].includes(message);
     const status = error.name === "ConditionalCheckFailedException" ? 409 : error.name === "InvalidParameterException" ? 422 : clientError ? 400 : 500;
     return json(event, status, { error: status === 500 ? "unexpected_error" : message });
   }

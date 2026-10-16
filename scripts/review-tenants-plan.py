@@ -24,7 +24,18 @@ def review(plan):
             field, name = recovery_resources[address]
             before, after = change.get('before') or {}, change.get('after') or {}
             recovery = before.get(field) == name and after.get(field) == name and before.get('id') == name
-        if not address.startswith('module.comunid.') or (change['actions'] not in [['create'], ['no-op']] and not recovery):
+        # Application releases may change only code/hash metadata of this exact Lambda.
+        # Roles, environment, handler, runtime, paths, and every other resource remain protected.
+        code_update = False
+        if address == 'module.comunid.module.api.aws_lambda_function.api' and change['actions'] == ['update']:
+            before, after = change.get('before') or {}, change.get('after') or {}
+            code_fields = {'source_code_hash', 'code_sha256', 'source_code_size', 'last_modified', 'qualified_arn', 'qualified_invoke_arn', 'version', 'signing_job_arn', 'signing_profile_version_arn'}
+            changed = {key for key in set(before) | set(after) if before.get(key) != after.get(key)}
+            unknown = {key for key, value in change.get('after_unknown', {}).items() if value}
+            code_update = (before.get('id') == after.get('id') == before.get('function_name') == after.get('function_name') == 'comunid-tenants-production-api'
+                and 'source_code_hash' in changed and changed <= code_fields and unknown <= code_fields
+                and isinstance(after.get('source_code_hash'), str) and bool(after['source_code_hash']))
+        if not address.startswith('module.comunid.') or (change['actions'] not in [['create'], ['no-op']] and not recovery and not code_update):
             raise ValueError(f'Refusing modification/deletion or foreign resource: {address}')
         after = change.get('after') or {}
         if kind == 'aws_cloudfront_distribution' and set(after.get('aliases', [])) != {'tenants.comunid.app', '*.comunid.app'}:
@@ -51,7 +62,7 @@ if __name__ == '__main__':
         raise SystemExit('The plan differs from the reviewed digest; run plan-only and review it first.')
     summary = f'## Independent tenants plan\n\nSource commit: `{os.environ.get("SOURCE_SHA", "local")}`\n\nRegion: `us-east-2` · state: `comunid/tenants/terraform.tfstate`\n\nPlan SHA-256: `{digest}`\n\n| Resource | Action |\n| --- | --- |\n'
     summary += ''.join(f'| `{r["address"]}` | {", ".join(r["change"]["actions"])} |\n' for r in changes)
-    summary += '\nExisting resources cannot be updated or deleted. Only the two exact failed bootstrap Lambda/CloudFront-function resources may be replaced when Terraform marks them tainted.\n'
+    summary += '\nExisting infrastructure cannot be updated or deleted. Only code/hash metadata of the exact tenants Lambda may be updated. The two exact failed bootstrap Lambda/CloudFront-function resources may be replaced only when tainted.\n'
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
             f.write(summary)

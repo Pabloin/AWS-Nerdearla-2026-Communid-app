@@ -1,5 +1,5 @@
 import { tenantId, tenantStorageKey, tenantApiBase, tenantProfileUrl } from "../../shared/tenant";
-import React, { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import React, { useEffect, useMemo, useRef, useState, lazy, Suspense, type FormEvent } from "react";
 import ReactDOM from "react-dom/client";
 import {
   ArrowLeft,
@@ -56,6 +56,10 @@ import {
   type Encounter,
 } from "./domain";
 import { nativeAndroid, nativeBadgeUrl, scanNativeBadge, takeNativeSelfie } from "./native";
+import { countryExperience } from "../../shared/countries";
+import { CountryOptions, OwnBadge } from "./CountryFields";
+const CountryPassport = lazy(() => import("./CountryPassport").then(module => ({ default: module.CountryPassport })));
+import { collectedCountries, countryName } from "./country-passport";
 import "./styles.css";
 
 type View =
@@ -68,6 +72,7 @@ type View =
   | "selfie"
   | "success"
   | "passport";
+const countriesMode = countryExperience(tenantId);
 const encounterKey = tenantStorageKey("comunid:encounters");
 const apiBaseUrl = tenantApiBase(import.meta.env.VITE_API_BASE_URL);
 type LiveHero = { profileId: string; name: string; latitude: number; longitude: number; accuracy: number; updatedAt: string };
@@ -104,12 +109,15 @@ function Avatar({
   large?: boolean;
 }) {
   const photoUrl = (!tenantId ? heroPhotoUrl(profile.id) : null) || (profile.id.startsWith("member-") ? apiBaseUrl + "/profiles/" + profile.id + "/photo" : null);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  useEffect(() => setPhotoFailed(false), [photoUrl]);
+  const showPhoto = photoUrl && !photoFailed;
   return (
     <span
-      className={`avatar ${large ? "avatar-large" : ""} ${photoUrl ? "avatar-photo" : ""} ${photoUrl ? `avatar-${profile.id}` : ""}`}
+      className={`avatar ${large ? "avatar-large" : ""} ${showPhoto ? "avatar-photo" : ""} ${showPhoto ? `avatar-${profile.id}` : ""}`}
       style={{ "--accent": profile.color } as React.CSSProperties}
     >
-      {photoUrl ? <img src={photoUrl} alt="" loading="lazy" /> : profile.name
+      {showPhoto ? <img src={photoUrl} alt="" loading="lazy" onError={() => setPhotoFailed(true)} /> : profile.name
         .split(/\s+/)
         .slice(0, 2)
         .map((part) => part[0])
@@ -150,6 +158,11 @@ function App() {
   const [session, setSession] = useState<AttendeeSession | null>(null);
   const [guest, setGuest] = useState<GuestSession | null>(readGuestSession);
   const [guestName, setGuestName] = useState("");
+  const [guestCountry, setGuestCountry] = useState("");
+  const [guestProfileConsent, setGuestProfileConsent] = useState(false);
+  const [profileCountry, setProfileCountry] = useState("");
+  const [profileConsent, setProfileConsent] = useState(false);
+  const [newCountry, setNewCountry] = useState(false);
   const [guestEmail, setGuestEmail] = useState("");
   const [profileName, setProfileName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
@@ -194,6 +207,7 @@ function App() {
   const collectedProfiles = profiles.filter((profile) =>
     collectedIds.has(profile.id),
   );
+  const passportCountries = useMemo(() => collectedCountries(encounters), [encounters]);
   const heroEncounters = collectedProfiles.filter((profile) => profile.role === "hero").length;
   const builderEncounters = collectedProfiles.filter((profile) => profile.role === "builder").length;
   const studentEncounters = collectedProfiles.filter((profile) => profile.role === "student").length;
@@ -210,7 +224,9 @@ function App() {
   useEffect(() => {
     setProfileName(session?.name || guest?.guest.name || "");
     setProfileEmail(session?.email || guest?.guest.email || "");
-  }, [session, guest?.guest.name, guest?.guest.email]);
+    setProfileCountry(guest?.guest.countryCode || "");
+    setProfileConsent(guest?.guest.profileConsent === true);
+  }, [session, guest?.guest.name, guest?.guest.email, guest?.guest.countryCode, guest?.guest.profileConsent]);
   useEffect(() => {
     if (!apiBaseUrl)
       localStorage.setItem(encounterKey, JSON.stringify(encounters));
@@ -279,10 +295,14 @@ function App() {
                   profileId: string;
                   collectedAt: string;
                   eventId: string;
+                  countryCode?: string;
+                  profileName?: string;
                 }) => ({
                   builderId: item.profileId,
                   collectedAt: item.collectedAt,
                   eventId: item.eventId,
+                  countryCode: item.countryCode,
+                  profileName: item.profileName,
                 }),
               )
             : [],
@@ -311,7 +331,7 @@ function App() {
     return () => { active = false; window.clearInterval(timer); };
   }, []);
   useEffect(() => {
-    if (!apiBaseUrl) return;
+    if (!apiBaseUrl || countriesMode) return;
     let active = true;
     const refresh = () => fetch(`${apiBaseUrl}/community/live`)
       .then((response) => response.ok ? response.json() : Promise.reject())
@@ -406,7 +426,7 @@ function App() {
     setGuestError("");
     try {
       if (authEnabled && !apiBaseUrl) throw new Error("La API no está configurada.");
-      const created = await createGuest(guestName, guestEmail, apiBaseUrl);
+      const created = await createGuest(guestName, guestEmail, apiBaseUrl, countriesMode ? { countryCode: guestCountry, profileConsent: guestProfileConsent } : {});
       saveGuestSession(created);
       setGuest(created);
       setSession(null);
@@ -432,7 +452,7 @@ function App() {
     setProfileMessage("");
     try {
       if (guest) {
-        const updated = await updateGuestProfile(guest, apiBaseUrl, profileName, profileEmail);
+        const updated = await updateGuestProfile(guest, apiBaseUrl, profileName, profileEmail, countriesMode ? { countryCode: profileCountry, profileConsent } : {});
         saveGuestSession(updated);
         setGuest(updated);
         setProfileName(updated.guest.name);
@@ -601,6 +621,7 @@ function App() {
   async function finishEncounter() {
     if (!pending) return;
     try {
+      let recorded: {collectedAt:string;countryCode?:string;profileName?:string} | undefined;
       if (session && authEnabled) {
         if (!apiBaseUrl) throw new Error("La API no está configurada.");
         const token = await accessToken();
@@ -617,10 +638,11 @@ function App() {
             "Encontramos el badge, pero no pudimos guardar el encuentro. Probá de nuevo.",
           );
       } else if (guest && apiBaseUrl) {
-        await recordGuestEncounter(guest, apiBaseUrl, pending.id);
+        recorded = await recordGuestEncounter(guest, apiBaseUrl, pending.id);
       }
       localStorage.removeItem(tenantStorageKey("comunid:pending-camera-profile"));
-      setEncounters((current) => collectEncounter(current, pending.id, eventId));
+      setNewCountry(Boolean(recorded?.countryCode && !passportCountries.some(item => item.code === recorded.countryCode)));
+      setEncounters((current) => collectEncounter(current, pending.id, eventId, recorded));
       go("success");
     } catch (error) {
       setMessage(
@@ -723,7 +745,7 @@ function App() {
             <h1>
               Entrá como <em>invitado</em>
             </h1>
-            <p>Decinos cómo te llamás y salí a conocer gente. Sin correo ni contraseña.</p>
+            <p>{countriesMode ? "Elegí tu país, creá tu QR y conocé personas de todo el mundo. Sin contraseña." : "Decinos cómo te llamás y salí a conocer gente. Sin correo ni contraseña."}</p>
           </div>
           <form onSubmit={(event) => void beginAsGuest(event)}>
             <label htmlFor="guest-name">Tu nombre</label>
@@ -742,13 +764,14 @@ function App() {
                 disabled={guestBusy}
               />
             </div>
-            <label htmlFor="guest-email">Tu correo electrónico</label>
+            {countriesMode && <><label htmlFor="guest-country">Tu país o territorio</label><select id="guest-country" className="country-select" value={guestCountry} onChange={event=>setGuestCountry(event.target.value)} required disabled={guestBusy}><CountryOptions /></select><label className="country-consent"><input type="checkbox" checked={guestProfileConsent} onChange={event=>setGuestProfileConsent(event.target.checked)} required disabled={guestBusy} />Acepto que mi nombre y país aparezcan en la comunidad y en mi QR. Mi correo permanece privado.</label></>}
+            <label htmlFor="guest-email">Tu correo electrónico{countriesMode ? " (opcional)" : ""}</label>
             <div className="input-wrap">
               <Mail size={20} />
-              <input id="guest-email" type="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} placeholder="tu@email.com" autoComplete="email" required disabled={guestBusy} />
+              <input id="guest-email" type="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} placeholder="tu@email.com" autoComplete="email" required={!countriesMode} disabled={guestBusy} />
             </div>
             <p className="guest-entry-note">
-              Revisá que el correo esté bien escrito: lo usaremos para compartirte el premio cuando completes el pasaporte. Podés editarlo después desde Mi perfil.
+              {countriesMode ? "El país es declarado por vos; no usamos tu ubicación ni pedimos documentos." : "Revisá que el correo esté bien escrito: lo usaremos para compartirte el premio cuando completes el pasaporte. Podés editarlo después desde Mi perfil."}
             </p>
             {guestError && <p className="auth-error" role="alert">{guestError}</p>}
             <button className="primary-button" type="submit" disabled={guestBusy}>
@@ -884,10 +907,9 @@ function App() {
             Explorá <em>el evento</em>
           </h1>
           <p className="page-subtitle">
-            Conocé a los Heroes de la comunidad y mirá quiénes comparten su
-            ubicación en vivo.
+            {countriesMode ? "Conocé personas de todo el mundo. Cada encuentro suma un país a tu pasaporte." : "Conocé a los Heroes de la comunidad y mirá quiénes comparten su ubicación en vivo."}
           </p>
-          <section className="featured-heroes" aria-label="Heroes destacados">
+          {countriesMode ? <section className="country-discover"><div className="country-discover-actions"><button className="primary-button" type="button" onClick={()=>go("scan")}><QrCode size={20} /> Escanear un encuentro</button><button className="text-button" type="button" onClick={()=>go("passport")}>Mi QR y pasaporte <ChevronRight size={18} /></button></div><h2>Personas de la comunidad</h2><p className="page-subtitle">El país que comparte cada persona puede convertirse en tu próximo sello.</p>{profiles.filter(profile=>profile.countryCode && profile.id!==guest?.guest.profileId).map(profile=><button className="country-person" key={profile.id} type="button" onClick={()=>setSelected(profile)}><Avatar profile={profile} /><span><strong>{profile.name}</strong><small>{countryName(profile.countryCode)}</small></span><ChevronRight size={18} /></button>)}{!profiles.some(profile=>profile.countryCode && profile.id!==guest?.guest.profileId)&&<p className="country-empty">Todavía no hay otras personas publicadas. Compartí el enlace de re:Invent para invitar a tu próximo encuentro.</p>}</section> : <><section className="featured-heroes" aria-label="Heroes destacados">
             <h2>Conocé a los Heroes</h2>
             <p>{tenantId && !profiles.some((profile) => profile.role === "hero") ? "Todavía no hay Heroes publicados en esta comunidad." : "Elegí a uno para ver su perfil."}</p>
             <div className="featured-hero-list">
@@ -929,25 +951,28 @@ function App() {
               <iframe title={`Mapa de ${mapHero.name}`} src={heroMapUrl(mapHero)} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" />
               <small>Mapa: © OpenStreetMap contributors · La posición puede variar dentro del edificio.</small>
             </div>}
-          </section>}
+          </section>}</>}
         </main>
       )}
       {view === "profile" && (
         <main className="page account-page">
           <span className="eyebrow">MI CUENTA</span>
           <h1>Mi perfil</h1>
-          <p className="page-subtitle">Revisá tus datos. Usaremos tu correo para compartirte un premio cuando completes el pasaporte.</p>
+          <p className="page-subtitle">{countriesMode ? "Tu nombre y país son públicos si aceptaste participar. El correo siempre es privado." : "Revisá tus datos. Usaremos tu correo para compartirte un premio cuando completes el pasaporte."}</p>
           <form className="account-card" aria-label="Datos de tu perfil" onSubmit={(event) => void saveProfile(event)}>
             <span className="account-avatar"><UserRound size={28} /></span>
             <label htmlFor="profile-name">Nombre</label><input id="profile-name" className="profile-edit-input" value={profileName} onChange={(event) => setProfileName(event.target.value)} minLength={2} maxLength={60} required disabled={profileBusy} />
-            <label htmlFor="profile-email">Correo electrónico</label><input id="profile-email" className="profile-edit-input" type="email" value={profileEmail} onChange={(event) => setProfileEmail(event.target.value)} maxLength={254} required disabled={profileBusy} />
-            <p>Podés corregir estos datos en cualquier momento. El correo sirve para enviarte el premio al completar el pasaporte.</p>
+            {countriesMode && <><label htmlFor="profile-country">País o territorio</label><select id="profile-country" className="country-select" value={profileCountry} onChange={event=>setProfileCountry(event.target.value)} required disabled={profileBusy}><CountryOptions /></select><label className="country-consent"><input type="checkbox" checked={profileConsent} onChange={event=>setProfileConsent(event.target.checked)} required disabled={profileBusy} />Acepto publicar mi nombre y país en la comunidad y generar mi QR.</label></>}
+            <label htmlFor="profile-email">Correo electrónico{countriesMode ? " (opcional)" : ""}</label><input id="profile-email" className="profile-edit-input" type="email" value={profileEmail} onChange={(event) => setProfileEmail(event.target.value)} maxLength={254} required={!countriesMode} disabled={profileBusy} />
+            <p>{countriesMode ? "Los cambios de país se aplican a tus próximos encuentros. Los sellos ya registrados por otras personas se conservan." : "Podés corregir estos datos en cualquier momento. El correo sirve para enviarte el premio al completar el pasaporte."}</p>
             <button className="primary-button" type="submit" disabled={profileBusy}>{profileBusy ? "Guardando…" : "Guardar cambios"}</button>
             {profileMessage && <p role="status">{profileMessage}</p>}
           </form>
+          {countriesMode && guest && <OwnBadge profileId={guest.guest.profileId} name={guest.guest.name} country={guest.guest.countryCode} />}
         </main>
       )}
-      {view === "passport" && (
+      {view === "passport" && countriesMode && <Suspense fallback={<main className="page"><p>Cargando tu mapa…</p></main>}><CountryPassport encounters={encounters} name={guest?.guest.name || session?.name || "Mi perfil"} profileId={guest?.guest.profileId} country={guest?.guest.countryCode} /></Suspense>}
+      {view === "passport" && !countriesMode && (
         <main className="page passport-page">
           <div className="page-center">
             <h1>Mi pasaporte</h1>
@@ -980,7 +1005,7 @@ function App() {
             </span>
             <div className="ticket-progress">
               <strong>
-                {Math.min(collectedProfiles.length, 5)} de 5 encuentros
+                {countriesMode ? `${passportCountries.length} países desbloqueados` : `${Math.min(collectedProfiles.length, 5)} de 5 encuentros`}
               </strong>
               <div className="segments">
                 {Array.from({ length: 5 }, (_, index) => (
@@ -1031,7 +1056,7 @@ function App() {
               <small>{rewardUnlocked ? "PREMIO DESBLOQUEADO" : "PRÓXIMO PREMIO"}</small>
               <strong>
                 {!rewardUnlocked
-                  ? `${Math.min(collectedProfiles.length, 5)} de 5 encuentros`
+                  ? `${countriesMode ? `${passportCountries.length} países desbloqueados` : `${Math.min(collectedProfiles.length, 5)} de 5 encuentros`}`
                   : "¡Desbloqueado!"}
               </strong>
               <small>{rewardUnlocked ? "Completaste 2 Heroes, 1 Builder, User Group y 1 Student." : "Meta: 2 Heroes, 1 Builder, User Group y 1 Student."}</small>
@@ -1286,7 +1311,7 @@ function App() {
               <br />
               <em>registrado!</em>
             </h1>
-            <p>Nueva persona en tu comunidad.</p>
+            <p>{countriesMode ? newCountry ? "¡Un nuevo país en tu pasaporte!" : "Un nuevo encuentro, una historia más." : "Nueva persona en tu comunidad."}</p>
           </div>
           <div className="success-photo">
             {selfie ? (
@@ -1301,7 +1326,7 @@ function App() {
           <div className="success-person">
             <Avatar profile={pending} />
             <span>
-              <small>{roleLabels[pending.role].toUpperCase()} ENCONTRADO</small>
+              <small>{countriesMode ? countryName(pending.countryCode).toUpperCase() : `${roleLabels[pending.role].toUpperCase()} ENCONTRADO`}</small>
               <strong>
                 {pending.name} · {roleLabels[pending.role]}
               </strong>
@@ -1316,7 +1341,7 @@ function App() {
             <span>
               <small>TU PASAPORTE</small>
               <strong>
-                {Math.min(collectedProfiles.length, 5)} de 5 encuentros
+                {countriesMode ? `${passportCountries.length} países desbloqueados` : `${Math.min(collectedProfiles.length, 5)} de 5 encuentros`}
               </strong>
             </span>
             <BookOpen size={24} />
@@ -1331,8 +1356,8 @@ function App() {
           <div className="success-reward">
             <Gift size={27} />
             <span>
-              <strong>{rewardUnlocked ? "¡Premio desbloqueado!" : "¡Nuevo sello desbloqueado!"}</strong>
-              <small>{rewardUnlocked ? "Visitá tu pasaporte para verlo." : "Sumás un sello a tu pasaporte."}</small>
+              <strong>{countriesMode ? newCountry ? "¡Nuevo país desbloqueado!" : "¡Encuentro registrado!" : rewardUnlocked ? "¡Premio desbloqueado!" : "¡Nuevo sello desbloqueado!"}</strong>
+              <small>{countriesMode ? "Mirá tu colección en el mapa del pasaporte." : rewardUnlocked ? "Visitá tu pasaporte para verlo." : "Sumás un sello a tu pasaporte."}</small>
             </span>
             <Sparkles size={19} />
           </div>

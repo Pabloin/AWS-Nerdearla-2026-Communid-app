@@ -1,6 +1,6 @@
 # Android · Comunid re:Invent
 
-Primera beta Android, versión `0.1.0`, rama `feat/reinvent-android`.
+Beta Android, versión `0.2.0`, rama `feat/reinvent-android`.
 Usa Capacitor 8 con la interfaz React empaquetada dentro del APK. El contenedor
 Android, el escáner QR y la captura de fotos son nativos; las pantallas no están
 reescritas en Kotlin. No carga una web remota como interfaz.
@@ -10,14 +10,15 @@ reescritas en Kotlin. No carga una web remota como interfaz.
 - Una sola experiencia: tenant `reinvent`, evento `reinvent-2026`.
 - Aplicación `app.comunid.reinvent`, nombre `Comunid re:Invent`.
 - Android 8.0/API 26 o superior; compilación/target API 36, Java 21.
-- Flujo actual: invitado, perfil, Heroes, encuentros QR y pasaporte.
+- Flujo de re:Invent: invitado con país, perfil público con QR, encuentros y mapa de países.
 - Cámara mediante `@capacitor/camera`; QR mediante el plugin oficial
   `@capacitor/barcode-scanner`, usando ZXing.
 - Botón Atrás, apertura de badges y restauración del resultado de cámara.
 - Los QR compartidos apuntan a `https://reinvent.comunid.app/b/{id}`.
 - Se rechazan QR de Argentina y otros hosts, aunque agreguen `?tenant=reinvent`.
 
-La variante de países y el mapa mundial todavía no forman parte de esta beta.
+La variante de países y el mapa mundial están implementados en la beta 0.2.0.
+Ver [las reglas de la colección](country-passport.md).
 Las selfies se muestran como parte del flujo actual; no se agregó almacenamiento
 de esas imágenes en el backend. Las APIs requieren conexión; esta versión no
 incluye una cola de encuentros offline.
@@ -99,7 +100,7 @@ Referencias: [Capacitor Android](https://capacitorjs.com/docs/android),
 [Camera](https://capacitorjs.com/docs/apis/camera),
 [Barcode Scanner](https://capacitorjs.com/docs/apis/barcode-scanner).
 
-## Beta compilada y verificada · 16 de octubre de 2026
+## Beta 0.1.0 compilada y verificada · 16 de octubre de 2026
 
 - Commit del APK: `0b1bad220469c1aba13169e093d9d3e424e8872f`.
 - [Compilación exitosa y lint](https://github.com/Pabloin/AWS-Nerdearla-2026-Communid-app/actions/runs/38929980349).

@@ -228,7 +228,7 @@ a separate subdomain per tenant. The agreed initial model is **one tenant per
 experience**, with one administrator access token and two planned application
 variants: people/Heroes and countries with a world map. Variant selection will
 be configured in code; a module builder and organization/event hierarchy are
-outside the initial scope. The countries variant is not implemented yet.
+outside the initial scope. The re:Invent countries variant is implemented for the Android 0.2.0 beta; see [country passport](docs/country-passport.md).
 
 `argentina.comunid.app` is the planned first tenant in the new platform.
 The current Argentina deployment and its domains stay separate; no accounts,

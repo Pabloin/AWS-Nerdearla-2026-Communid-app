@@ -35,6 +35,20 @@ class PlanReviewTests(unittest.TestCase):
         r['change']['before']['id'] = 'comunid-production-api'
         with self.assertRaises(ValueError): module.review(p)
 
+    def test_allows_only_code_updates_of_the_exact_tenants_lambda(self):
+        p = self.plan()
+        r = p['resource_changes'][0]
+        r['address'] = 'module.comunid.module.api.aws_lambda_function.api'
+        before = {'id': 'comunid-tenants-production-api', 'function_name': 'comunid-tenants-production-api', 'source_code_hash': 'old', 'role': 'same-role', 'runtime': 'nodejs22.x'}
+        r['change'] = {'actions': ['update'], 'before': before, 'after': {**before, 'source_code_hash': 'new'}, 'after_unknown': {'last_modified': True}}
+        module.review(p)
+        for field in ['role', 'runtime', 'filename', 'environment', 'function_name']:
+            modified = copy.deepcopy(p)
+            modified['resource_changes'][0]['change']['after'][field] = 'changed'
+            with self.assertRaises(ValueError): module.review(modified)
+        r['change']['after_unknown']['environment'] = True
+        with self.assertRaises(ValueError): module.review(p)
+
     def test_rejects_argentina_resources_domains_and_region(self):
         for p in [self.plan(after={'function_name': 'comunid-production-api'}), self.plan('cloudflare_dns_record', {'name': 'comunid.app'}), self.plan('cloudflare_dns_record', {'name': 'mobile.comunid.app'}), self.plan('aws_cloudfront_distribution', {'aliases': ['comunid.app', '*.comunid.app']})]:
             with self.assertRaises(ValueError): module.review(p)

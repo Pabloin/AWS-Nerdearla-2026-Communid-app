@@ -5,6 +5,9 @@ export type GuestProfile = {
   email: string | null;
   contactConsent: boolean;
   eventId: string;
+  countryCode?: string;
+  profileId?: string;
+  profileConsent?: boolean;
 };
 
 export type GuestSession = {
@@ -42,13 +45,15 @@ async function guestRequest<T>(
     },
   });
   if (!response.ok) {
-    const error = new Error(`guest_api_${response.status}`);
+    const data = await response.json().catch(() => ({}));
+    const message = ({ participant_country_required: "Esta persona todavía no indicó su país. Pedile que complete su perfil.", self_encounter_not_allowed: "No podés registrar un encuentro con tu propio QR.", invalid_country: "Elegí un país válido.", country_required: "Completá tu país para publicar tu perfil.", public_profile_consent_required: "Confirmá que aceptás publicar tu nombre y país." } as Record<string,string>)[data.error];
+    const error = new Error(message || `guest_api_${response.status}`);
     throw error;
   }
   return response.json() as Promise<T>;
 }
 
-export async function createGuest(name: string, email: string, apiBaseUrl: string): Promise<GuestSession> {
+export async function createGuest(name: string, email: string, apiBaseUrl: string, details: { countryCode?: string; profileConsent?: boolean } = {}): Promise<GuestSession> {
   const normalized = name.trim().replace(/\s+/g, " ");
   if (normalized.length < 2 || normalized.length > 60) {
     throw new Error("Ingresá un nombre de 2 a 60 caracteres.");
@@ -67,16 +72,16 @@ export async function createGuest(name: string, email: string, apiBaseUrl: strin
   }
   return guestRequest<GuestSession>(apiBaseUrl, "/guests", {
     method: "POST",
-    body: JSON.stringify({ name: normalized, email: email.trim() || null }),
+    body: JSON.stringify({ name: normalized, email: email.trim() || null, ...details }),
   });
 }
 
-export async function updateGuestProfile(session: GuestSession, apiBaseUrl: string, name: string, email: string): Promise<GuestSession> {
+export async function updateGuestProfile(session: GuestSession, apiBaseUrl: string, name: string, email: string, details: { countryCode?: string; profileConsent?: boolean } = {}): Promise<GuestSession> {
   const normalized = name.trim().replace(/\s+/g, " ");
   if (normalized.length < 2 || normalized.length > 60) throw new Error("Ingresá un nombre de 2 a 60 caracteres.");
   if (!apiBaseUrl) return { ...session, guest: { ...session.guest, name: normalized, email: email.trim() || null } };
   const result = await guestRequest<{ guest: GuestProfile }>(apiBaseUrl, "/guests/me/profile", {
-    method: "PUT", body: JSON.stringify({ name: normalized, email: email.trim() || null }),
+    method: "PUT", body: JSON.stringify({ name: normalized, email: email.trim() || null, ...details }),
   }, session.token);
   return { ...session, guest: result.guest };
 }
@@ -87,12 +92,12 @@ export async function refreshGuest(session: GuestSession, apiBaseUrl: string): P
   return { ...session, guest: result.guest };
 }
 
-export async function listGuestEncounters(session: GuestSession, apiBaseUrl: string): Promise<{ encounters: Array<{ profileId: string; collectedAt: string; eventId: string }> }> {
+export async function listGuestEncounters(session: GuestSession, apiBaseUrl: string): Promise<{ encounters: Array<{ profileId: string; collectedAt: string; eventId: string; countryCode?: string; profileName?: string }> }> {
   return guestRequest(apiBaseUrl, "/guests/me/encounters", {}, session.token);
 }
 
-export async function recordGuestEncounter(session: GuestSession, apiBaseUrl: string, profileId: string): Promise<void> {
-  await guestRequest(apiBaseUrl, "/guests/me/encounters", {
+export async function recordGuestEncounter(session: GuestSession, apiBaseUrl: string, profileId: string): Promise<{collectedAt:string; countryCode?:string; profileName?:string}> {
+  return guestRequest(apiBaseUrl, "/guests/me/encounters", {
     method: "POST",
     body: JSON.stringify({ profileId }),
   }, session.token);

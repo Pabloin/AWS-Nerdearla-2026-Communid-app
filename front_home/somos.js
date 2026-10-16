@@ -1,4 +1,5 @@
 import { tenantApiBase, tenantStorageKey, tenantId } from "../shared/tenant.js";
+import { countries, countryExperience } from "../shared/countries.js";
 import "./hero.css";
 
 const apiBase = tenantApiBase(import.meta.env.VITE_API_BASE_URL);
@@ -20,6 +21,13 @@ if (tenantId) {
       if (communityInput.value === tenantId) communityInput.value = data.tenant.name;
     }
   }).catch(() => undefined);
+}
+if (countryExperience(tenantId)) {
+  const label = document.createElement("label"); label.textContent = "País o territorio";
+  const select = document.createElement("select"); select.id="country-code"; select.required=true;
+  const placeholder=document.createElement("option"); placeholder.value=""; placeholder.textContent="Elegí tu país"; select.append(placeholder);
+  countries.forEach(country=>{const option=document.createElement("option");option.value=country.code;option.textContent=country.name;select.append(option);});
+  label.append(select); nameInput.after(label);
 }
 const roleInput = document.querySelector("#role");
 const photoInput = document.querySelector("#photo");
@@ -167,7 +175,7 @@ registration.addEventListener("submit", async (event) => {
     const response = await fetch(apiBase + "/community/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: nameInput.value.trim(), role: roleInput.value, community: communityInput.value, photoDataUrl }),
+      body: JSON.stringify({ ...(document.querySelector("#country-code") ? {countryCode: document.querySelector("#country-code").value} : {}), name: nameInput.value.trim(), role: roleInput.value, community: communityInput.value, photoDataUrl }),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {

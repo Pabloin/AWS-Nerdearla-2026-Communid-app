@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { countryCode } from "../../shared/countries.js";
 
 export const communityRoles = ["hero", "builder", "student", "connector", "legend"];
 
@@ -15,6 +16,7 @@ export function normalizeProfile(input = {}) {
   if (!name) throw new Error("profile_name_required");
 
   return {
+    ...(input.countryCode ? { countryCode: countryCode(input.countryCode) } : {}),
     id: text(input.id, 80) || randomUUID(),
     name,
     role,

@@ -13,12 +13,15 @@ export type BuilderProfile = {
   askMeAbout: string;
   story: string;
   color: string;
+  countryCode?: string;
 };
 
 export type Encounter = {
   builderId: string;
   collectedAt: string;
   eventId: string;
+  countryCode?: string;
+  profileName?: string;
 };
 
 export type Quest = {
@@ -61,7 +64,7 @@ export function questProgress(quest: Quest, profiles: BuilderProfile[], encounte
   return profiles.filter((profile) => uniqueIds.has(profile.id) && (!quest.role || profile.role === quest.role)).length;
 }
 
-export function collectEncounter(current: Encounter[], builderId: string, eventId = "nerdearla-2026"): Encounter[] {
+export function collectEncounter(current: Encounter[], builderId: string, eventId = "nerdearla-2026", snapshot?: Pick<Encounter, "countryCode" | "profileName" | "collectedAt">): Encounter[] {
   if (current.some((encounter) => encounter.builderId === builderId && encounter.eventId === eventId)) return current;
-  return [{ builderId, eventId, collectedAt: new Date().toISOString() }, ...current];
+  return [{ builderId, eventId, collectedAt: snapshot?.collectedAt || new Date().toISOString(), ...(snapshot?.countryCode ? { countryCode: snapshot.countryCode, profileName: snapshot.profileName } : {}) }, ...current];
 }

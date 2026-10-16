@@ -39,10 +39,10 @@ jobs:
       - name: Prepare downloadable beta
         run: |
           mkdir -p android-artifacts
-          cp front_mobile/android/app/build/outputs/apk/debug/app-debug.apk android-artifacts/comunid-reinvent-0.1.0-debug.apk
+          cp front_mobile/android/app/build/outputs/apk/debug/app-debug.apk android-artifacts/comunid-reinvent-0.2.0-debug.apk
           sha256sum android-artifacts/*.apk > android-artifacts/SHA256SUMS
           echo 'Android beta for the reinvent tenant only. Debug-signed; not a Play Store release.' > android-artifacts/README.txt
-          echo '## Comunid re:Invent Android · 0.1.0 beta' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Comunid re:Invent Android · 0.2.0 beta' >> "$GITHUB_STEP_SUMMARY"
           echo 'Download the APK from this run’s artifacts. No AWS credentials or admin tokens are packaged.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Physical-device QR, selfie and lifecycle testing is still required.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4

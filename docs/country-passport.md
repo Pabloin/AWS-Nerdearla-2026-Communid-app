@@ -58,3 +58,27 @@ Las pruebas cubren consentimiento, correo privado, país falsificado, duplicados
 QR propio, cambio de país, persistencia de sellos y separación con Argentina.
 El flujo visual se comprobó con un backend local en memoria y datos ficticios.
 La cámara y QR nativos siguen requiriendo pruebas en un teléfono real.
+
+## Publicación verificada · 16 de octubre de 2026
+
+- Web: <https://reinvent.comunid.app>.
+- [Plan revisado](https://github.com/Pabloin/AWS-Nerdearla-2026-Communid-app/actions/runs/38941399018): cero altas, un cambio de código en la Lambda de tenants, cero eliminaciones.
+- [Despliegue exitoso](https://github.com/Pabloin/AWS-Nerdearla-2026-Communid-app/actions/runs/38941653568), commit `305d933485596a78660c8686d8164c1dfcadf4a8`.
+- [APK 0.2.0 y lint exitosos](https://github.com/Pabloin/AWS-Nerdearla-2026-Communid-app/actions/runs/38939126172), código de aplicación `42e112fe5c0dfb2abf372ecb6eea0dd1887ae63c`.
+- [Descargar ZIP del APK](https://github.com/Pabloin/AWS-Nerdearla-2026-Communid-app/actions/runs/38939126172/artifacts/12063120306).
+- Tamaño del APK: 43.813.971 bytes. SHA-256: `a44d3962bf7eeddf7771732433ffad861fc2c1961c2a142238b5da28fcd7386a`.
+
+Pasaron 59 pruebas de aplicación y ocho pruebas del validador del plan. Se
+inspeccionó el APK en memoria, incluyendo su versión 0.2.0, application ID,
+interfaz local y mapa incluido. Los tres frontends compilaron correctamente.
+
+La API publicada reportó `collection=countries` en re:Invent y `collection=people`
+en Argentina. Se comprobó el rechazo de países inválidos y falta de consentimiento
+antes de persistir, sin crear participantes ficticios en producción. El formulario
+de país quedó visible en el dominio público. El mapa, la edición de perfil y el QR
+se probaron con datos locales en memoria, en escritorio y tamaño móvil.
+
+La API original de Argentina conservó `eventId=nerdearla-2026`, y su distribución
+`E2DYSZ3ARR9EVF` conservó el ETag `E2EUQ1WTGCTBG2`. Los dominios de tenants,
+Argentina nueva y re:Invent devolvieron HTTPS 200. La cámara y QR de Android
+continúan pendientes de validación en hardware real.

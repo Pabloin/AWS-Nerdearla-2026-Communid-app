@@ -116,3 +116,13 @@ ni un emulador en la Mac; las pruebas con cámara y QR en hardware siguen pendie
 
 El artefacto de Actions se conserva 30 días. Descargar y descomprimir el ZIP
 para obtener `comunid-reinvent-0.1.0-debug.apk` e instalarlo en Android.
+
+## Beta 0.2.0 · Países y mapa
+
+La versión nueva incluye país declarado, perfil público con QR, colección de países
+únicos por encuentros y mapa mundial con selección de personas por país.
+[Reglas, despliegue y validación](country-passport.md).
+
+[Descargar APK 0.2.0 (ZIP)](https://github.com/Pabloin/AWS-Nerdearla-2026-Communid-app/actions/runs/38939126172/artifacts/12063120306).
+El APK ocupa 43.813.971 bytes y el ZIP unos 31 MB. Está firmado para depuración;
+para reemplazar una beta de otro runner puede ser necesario desinstalar la anterior.

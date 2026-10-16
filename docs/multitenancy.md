@@ -311,3 +311,11 @@ La distribución original `E2DYSZ3ARR9EVF` conservó su ETag
 `eventId=nerdearla-2026`. Los dominios originales se comprobaron por HTTPS.
 Ese primer despliegue correspondió a la experiencia de personas. La variante
 de países se implementó después para re:Invent; ver `country-passport.md`.
+
+## re:Invent · Beta 0.2.0 publicada
+
+El 16 de octubre se publicó la variante de países del tenant `reinvent` y se generó
+su APK Android. Incluye registro con país, QR de participante y mapa de países
+recolectados. La actualización cambió solo código de la Lambda nueva y frontends
+del stack tenants; Argentina conserva su variante de personas.
+[Ver reglas, pruebas y enlaces de publicación](country-passport.md).

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Comunid re:Invent</string>
+    <string name="title_activity_main">Comunid re:Invent</string>
+    <string name="package_name">app.comunid.reinvent</string>
+    <string name="custom_url_scheme">app.comunid.reinvent</string>
+</resources>

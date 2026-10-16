@@ -1,0 +1,60 @@
+name: Comunid reInvent Android
+run-name: Android reInvent beta · ${{ github.sha }}
+on:
+  push:
+    branches: [feat/reinvent-android]
+    paths:
+      - 'front_mobile/**'
+      - 'shared/**'
+      - 'scripts/build-reinvent-android.mjs'
+      - 'package-lock.json'
+      - '.github/workflows/reinvent-android.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: reinvent-android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm test
+      - name: Build bundled reInvent app and sync Android
+        run: npm --workspace @comunid/mobile run android:sync
+      - name: Assemble test APK and lint native project
+        working-directory: front_mobile/android
+        run: ./gradlew --no-daemon assembleDebug lintDebug
+      - name: Prepare downloadable beta
+        run: |
+          mkdir -p android-artifacts
+          cp front_mobile/android/app/build/outputs/apk/debug/app-debug.apk android-artifacts/comunid-reinvent-0.1.0-debug.apk
+          sha256sum android-artifacts/*.apk > android-artifacts/SHA256SUMS
+          echo 'Android beta for the reinvent tenant only. Debug-signed; not a Play Store release.' > android-artifacts/README.txt
+          echo '## Comunid re:Invent Android · 0.1.0 beta' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Download the APK from this run’s artifacts. No AWS credentials or admin tokens are packaged.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Physical-device QR, selfie and lifecycle testing is still required.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: comunid-reinvent-android-beta-${{ github.run_number }}
+          path: android-artifacts/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-lint-${{ github.run_number }}
+          path: front_mobile/android/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+          retention-days: 14

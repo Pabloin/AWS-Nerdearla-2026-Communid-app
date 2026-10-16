@@ -4,6 +4,7 @@
 Credentials are stored in Secrets Manager, never printed or copied from Argentina.
 Run after the successful audited tenants infrastructure/application deployment.
 """
+import argparse
 import json
 import os
 import secrets
@@ -55,6 +56,11 @@ def request(api, path, token=None, body=None, expected=200):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Initialize an empty tenant and store its admin key privately.")
+    parser.add_argument('--tenant', choices=['argentina', 'reinvent'], default='argentina')
+    tenant_id = parser.parse_args().tenant
+    tenant_name = {'argentina': 'Argentina', 'reinvent': 're:Invent 2026'}[tenant_id]
+    TENANT_SECRET = f'comunid-tenants-production-{tenant_id}-admin-token'
     assert aws('sts', 'get-caller-identity')['Account'] == ACCOUNT
     # Stream the tenants state into memory. Never read Argentina state or print it.
     result = subprocess.run(['aws', '--profile', PROFILE, 's3', 'cp', f's3://comunid-terraform-state-{ACCOUNT}/comunid/tenants/terraform.tfstate', '-', '--only-show-errors'], capture_output=True, text=True, check=True)
@@ -70,28 +76,28 @@ if __name__ == '__main__':
     else:
         platform_token = platform['SecretString']
     tenants = request(api, '/tenants', platform_token)['tenants']
-    existing = next((item for item in tenants if item['id'] == 'argentina'), None)
+    existing = next((item for item in tenants if item['id'] == tenant_id), None)
     saved = aws('secretsmanager', 'get-secret-value', '--secret-id', TENANT_SECRET, missing=True)
     if existing:
-        if not saved: raise SystemExit('Argentina tenant already exists but its admin credential is not saved; refusing to rotate it.')
+        if not saved: raise SystemExit(f'{tenant_id} tenant already exists but its admin credential is not saved; refusing to rotate it.')
         tenant_token = saved['SecretString']
     else:
-        if saved: raise SystemExit('Argentina admin credential already exists without a tenant; refusing to overwrite it.')
-        created = request(api, '/tenants', platform_token, {'id': 'argentina', 'name': 'Argentina', 'eventId': 'argentina-2026'}, expected=201)
+        if saved: raise SystemExit(f'{tenant_id} admin credential already exists without a tenant; refusing to overwrite it.')
+        created = request(api, '/tenants', platform_token, {'id': tenant_id, 'name': tenant_name, 'eventId': f'{tenant_id}-2026'}, expected=201)
         tenant_token = created['adminToken']
         try:
             store_secret(TENANT_SECRET, tenant_token, create=True)
         except Exception:
-            fallback = Path('/private/tmp/comunid-tenants-argentina-admin-token')
+            fallback = Path(f'/private/tmp/comunid-tenants-{tenant_id}-admin-token')
             with os.fdopen(os.open(fallback, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as f:
                 f.write(tenant_token)
             raise SystemExit(f'Credential could not be stored in AWS. Recovery copy saved privately at {fallback}; token was not printed.')
-    assert request(api, '/t/argentina/admin/session', tenant_token)['authorized'] is True
+    assert request(api, f'/t/{tenant_id}/admin/session', tenant_token)['authorized'] is True
     request(api, '/tenants', tenant_token, expected=401)
-    profiles = request(api, '/t/argentina/profiles')['profiles']
+    profiles = request(api, f'/t/{tenant_id}/profiles')['profiles']
     if not existing: assert profiles == []
     request(api, '/t/does-not-exist/profiles', expected=404)
-    print('Argentina tenant initialized empty; admin scope and missing-tenant checks passed.')
+    print(f'{tenant_id} tenant initialized; empty-on-create, admin scope and missing-tenant checks passed.')
     print(f'Platform credential: Secrets Manager / {REGION} / {PLATFORM_SECRET}')
-    print(f'Argentina credential: Secrets Manager / {REGION} / {TENANT_SECRET}')
+    print(f'{tenant_name} credential: Secrets Manager / {REGION} / {TENANT_SECRET}')
     print('No credentials were printed and no existing Argentina data was copied.')

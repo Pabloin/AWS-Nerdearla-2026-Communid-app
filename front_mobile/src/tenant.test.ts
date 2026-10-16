@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 
-afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); });
 async function load(hostname: string, search = "") {
   vi.stubGlobal("window", { location: { hostname, search } });
   vi.stubGlobal("document", { body: { textContent: "" } });
@@ -32,4 +32,19 @@ it("rejects invalid explicit tenants instead of falling back", async () => {
 });
 it("requires a community when opening an app on the portal host", async () => {
   await expect(load("tenants.comunid.app")).rejects.toThrow("Comunidad inválida");
+});
+
+it("pins native builds to reInvent and creates public QR links", async () => {
+  vi.stubEnv("VITE_FIXED_TENANT_ID", "reinvent");
+  const tenant = await load("localhost");
+  expect(tenant.tenantId).toBe("reinvent");
+  expect(tenant.tenantApiBase("https://api.example")).toBe("https://api.example/t/reinvent");
+  expect(tenant.tenantProfileUrl("https://localhost", "member-alex")).toBe("https://reinvent.comunid.app/b/member-alex");
+});
+it.each([
+  ["localhost", "?tenant=argentina"],
+  ["argentina.comunid.app", ""],
+])("refuses switching a fixed native tenant via host or query", async (host, search) => {
+  vi.stubEnv("VITE_FIXED_TENANT_ID", "reinvent");
+  await expect(load(host, search)).rejects.toThrow("Comunidad inválida");
 });

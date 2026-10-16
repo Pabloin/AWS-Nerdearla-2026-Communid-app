@@ -1,0 +1,9 @@
+{
+  "appId": "app.comunid.reinvent",
+  "appName": "Comunid re:Invent",
+  "webDir": "dist-android",
+  "backgroundColor": "#131422",
+  "server": { "hostname": "localhost", "androidScheme": "https", "cleartext": false },
+  "android": { "allowMixedContent": false },
+  "plugins": { "CapacitorHttp": { "enabled": true } }
+}

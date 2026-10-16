@@ -55,6 +55,7 @@ import {
   type BuilderProfile,
   type Encounter,
 } from "./domain";
+import { nativeAndroid, nativeBadgeUrl, scanNativeBadge, takeNativeSelfie } from "./native";
 import "./styles.css";
 
 type View =
@@ -131,16 +132,19 @@ function Brand() {
 }
 
 function App() {
-  const [eventName, setEventName] = useState(tenantId || "Nerdearla 2026");
+  const [eventName, setEventName] = useState(import.meta.env.VITE_EVENT_NAME || tenantId || "Nerdearla 2026");
   useEffect(() => {
     if (!tenantId || !apiBaseUrl) return;
     let active = true;
     fetch(`${apiBaseUrl}/health`).then((response) => response.ok ? response.json() : Promise.reject())
-      .then((data) => { if (active && data.tenant?.name) setEventName(data.tenant.name); })
+      .then((data) => { if (active && data.tenant?.name) setEventName(data.tenant.name); if (active && data.eventId) setEventId(data.eventId); })
       .catch(() => undefined);
     return () => { active = false; };
   }, []);
+  const [eventId, setEventId] = useState(import.meta.env.VITE_EVENT_ID || "nerdearla-2026");
   const [view, setView] = useState<View>("welcome");
+  const [nativeLink, setNativeLink] = useState<{ url: string } | null>(null);
+  const [restoredPhoto, setRestoredPhoto] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authReady, setAuthReady] = useState(false);
   const [session, setSession] = useState<AttendeeSession | null>(null);
@@ -319,14 +323,60 @@ function App() {
   }, []);
   useEffect(() => {
     if (deepLinkHandled.current || (!session && !guest)) return;
-    const id = profileIdFromQr(window.location.href, tenantId);
+    const id = profileIdFromQr(nativeLink?.url || window.location.href, tenantId);
     const profile = profiles.find((item) => item.id === id);
     if (profile) {
       deepLinkHandled.current = true;
       setPending(profile);
       setView("selfie");
     }
-  }, [profiles, session, guest]);
+  }, [profiles, session, guest, nativeLink]);
+  useEffect(() => {
+    if (!nativeAndroid) return;
+    let active = true;
+    const listeners: Array<{ remove: () => Promise<void> }> = [];
+    const keep = async (listener: Promise<{ remove: () => Promise<void> }>) => {
+      const handle = await listener;
+      if (active) listeners.push(handle); else await handle.remove();
+    };
+    void import("@capacitor/app").then(async ({ App: NativeApp }) => {
+      const receive = (url: string) => {
+        const badge = nativeBadgeUrl(url);
+        if (!active || !badge || !profileIdFromQr(badge, tenantId)) return;
+        deepLinkHandled.current = false;
+        setNativeLink({ url: badge });
+      };
+      await keep(NativeApp.addListener("appUrlOpen", ({ url }) => receive(url)));
+      await keep(NativeApp.addListener("appRestoredResult", (result) => {
+        if (active && result.pluginId === "Camera" && result.success && typeof result.data?.webPath === "string") setRestoredPhoto(result.data.webPath);
+      }));
+      const launch = await NativeApp.getLaunchUrl();
+      if (launch) receive(launch.url);
+    }).catch(() => { if (active) setMessage("No pudimos abrir el enlace. Podés escanear el QR desde la app."); });
+    return () => { active = false; listeners.forEach((handle) => { void handle.remove(); }); };
+  }, []);
+  useEffect(() => {
+    if (!restoredPhoto || (!session && !guest)) return;
+    let saved: { profileId?: string; owner?: string };
+    try { saved = JSON.parse(localStorage.getItem(tenantStorageKey("comunid:pending-camera-profile")) || "{}"); } catch { return; }
+    if (saved.owner !== (guest?.guest.id || session?.userId)) { setRestoredPhoto(null); return; }
+    const profile = profiles.find((item) => item.id === saved.profileId);
+    if (!profile) return;
+    setPending(profile); setSelfie(restoredPhoto); setView("selfie"); setRestoredPhoto(null);
+  }, [restoredPhoto, profiles, session, guest]);
+  useEffect(() => {
+    if (!nativeAndroid) return;
+    let active = true;
+    let handle: { remove: () => Promise<void> } | undefined;
+    void import("@capacitor/app").then(async ({ App: NativeApp }) => {
+      const listener = await NativeApp.addListener("backButton", () => {
+        if (["welcome", "discover"].includes(view)) void NativeApp.minimizeApp();
+        else go(view === "selfie" ? "scan" : view === "guest-entry" ? "welcome" : "discover");
+      });
+      if (active) handle = listener; else await listener.remove();
+    });
+    return () => { active = false; void handle?.remove(); };
+  }, [view, session, guest]);
   function stopCamera() {
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -410,6 +460,8 @@ function App() {
     window.scrollTo(0, 0);
   }
   async function endSession() {
+    localStorage.removeItem(tenantStorageKey("comunid:pending-camera-profile"));
+    setRestoredPhoto(null);
     try {
       if (session) await logout();
       if (guest) saveGuestSession(null);
@@ -454,7 +506,7 @@ function App() {
     }
   }
   function badgeFound(payload: string) {
-    const id = profileIdFromQr(payload, tenantId);
+    const id = profileIdFromQr(nativeAndroid ? nativeBadgeUrl(payload) || "" : payload, tenantId);
     const profile = profiles.find((item) => item.id === id);
     if (!profile) throw new Error("Este badge no pertenece al evento actual.");
     stopCamera();
@@ -496,6 +548,17 @@ function App() {
   async function openCamera(mode: "scan" | "selfie") {
     setMessage("Abriendo cámara…");
     try {
+      if (nativeAndroid) {
+        if (mode === "scan") {
+          const badge = await scanNativeBadge();
+          if (badge) badgeFound(badge); else setMessage("Escaneo cancelado. Podés volver a intentarlo.");
+        } else {
+          if (pending) localStorage.setItem(tenantStorageKey("comunid:pending-camera-profile"), JSON.stringify({ profileId: pending.id, owner: guest?.guest.id || session?.userId }));
+          setSelfie(await takeNativeSelfie());
+          setMessage("");
+        }
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: mode === "scan" ? "environment" : "user" },
@@ -518,7 +581,7 @@ function App() {
       });
     } catch {
       setMessage(
-        "No pudimos acceder a la cámara. Podés continuar sin foto o usar un badge de prueba.",
+        "No se pudo completar la captura. Revisá el permiso de cámara o volvé a intentarlo.",
       );
     }
   }
@@ -555,7 +618,8 @@ function App() {
       } else if (guest && apiBaseUrl) {
         await recordGuestEncounter(guest, apiBaseUrl, pending.id);
       }
-      setEncounters((current) => collectEncounter(current, pending.id));
+      localStorage.removeItem(tenantStorageKey("comunid:pending-camera-profile"));
+      setEncounters((current) => collectEncounter(current, pending.id, eventId));
       go("success");
     } catch (error) {
       setMessage(

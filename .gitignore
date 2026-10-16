@@ -54,3 +54,14 @@ Thumbs.db
 
 # Local brand references; deployed assets live in each frontend's public directory
 /02-brand/
+
+# Android generated outputs and local signing credentials
+dist-android/
+**/.gradle/
+**/build/
+**/local.properties
+*.jks
+*.keystore
+front_mobile/android/app/src/main/assets/public/
+front_mobile/android/app/src/main/assets/capacitor.config.json
+front_mobile/android/app/src/main/assets/capacitor.plugins.json

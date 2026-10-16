@@ -328,6 +328,7 @@ function App() {
     if (profile) {
       deepLinkHandled.current = true;
       setPending(profile);
+      setSelfie(null);
       setView("selfie");
     }
   }, [profiles, session, guest, nativeLink]);

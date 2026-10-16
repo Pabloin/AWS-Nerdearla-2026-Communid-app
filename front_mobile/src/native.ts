@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 
 export const nativeAndroid = Capacitor.getPlatform() === "android";
+if (nativeAndroid) document.documentElement.classList.add("native-android");
 
 export async function scanNativeBadge(): Promise<string> {
   const { CapacitorBarcodeScanner, CapacitorBarcodeScannerTypeHint, CapacitorBarcodeScannerAndroidScanningLibrary } = await import("@capacitor/barcode-scanner");
@@ -25,6 +26,7 @@ export async function takeNativeSelfie(): Promise<string> {
 export function nativeBadgeUrl(value: string): string | null {
   try {
     const url = new URL(value);
+    if (url.port || url.username || url.password) return null;
     if (url.protocol === "comunid-reinvent:" && url.hostname === "b") {
       return `https://reinvent.comunid.app/b${url.pathname}`;
     }

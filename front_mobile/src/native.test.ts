@@ -18,6 +18,8 @@ describe("Android re:Invent badge isolation", () => {
     "https://user:pass@reinvent.comunid.app/b/alex",
     "https://reinvent.comunid.app:8443/b/alex",
     "comunid-reinvent://admin/alex",
+    "comunid-reinvent://user:pass@b/alex",
+    "comunid-reinvent://b:8080/alex",
     "garbage",
   ])("rejects foreign or untrusted links: %s", (url) => {
     expect(nativeBadgeUrl(url)).toBeNull();

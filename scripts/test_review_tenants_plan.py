@@ -40,7 +40,7 @@ class PlanReviewTests(unittest.TestCase):
         r = p['resource_changes'][0]
         r['address'] = 'module.comunid.module.api.aws_lambda_function.api'
         before = {'id': 'comunid-tenants-production-api', 'function_name': 'comunid-tenants-production-api', 'source_code_hash': 'old', 'role': 'same-role', 'runtime': 'nodejs22.x'}
-        r['change'] = {'actions': ['update'], 'before': before, 'after': {**before, 'source_code_hash': 'new'}, 'after_unknown': {'last_modified': True}}
+        r['change'] = {'actions': ['update'], 'before': before, 'after': {**before, 'source_code_hash': 'new'}, 'after_unknown': {'last_modified': True, 'environment': [{'variables': {}}], 'layers': [], 'architectures': [False]}}
         module.review(p)
         for field in ['role', 'runtime', 'filename', 'environment', 'function_name']:
             modified = copy.deepcopy(p)

@@ -7,6 +7,14 @@ import sys
 from pathlib import Path
 
 
+def contains_unknown(value):
+    if isinstance(value, dict):
+        return any(contains_unknown(child) for child in value.values())
+    if isinstance(value, list):
+        return any(contains_unknown(child) for child in value)
+    return bool(value)
+
+
 def review(plan):
     if plan.get('variables', {}).get('aws_region', {}).get('value') != 'us-east-2':
         raise ValueError('Expected the independent tenants region us-east-2')
@@ -31,7 +39,7 @@ def review(plan):
             before, after = change.get('before') or {}, change.get('after') or {}
             code_fields = {'source_code_hash', 'code_sha256', 'source_code_size', 'last_modified', 'qualified_arn', 'qualified_invoke_arn', 'version', 'signing_job_arn', 'signing_profile_version_arn'}
             changed = {key for key in set(before) | set(after) if before.get(key) != after.get(key)}
-            unknown = {key for key, value in change.get('after_unknown', {}).items() if value}
+            unknown = {key for key, value in change.get('after_unknown', {}).items() if contains_unknown(value)}
             code_update = (before.get('id') == after.get('id') == before.get('function_name') == after.get('function_name') == 'comunid-tenants-production-api'
                 and 'source_code_hash' in changed and changed <= code_fields and unknown <= code_fields
                 and isinstance(after.get('source_code_hash'), str) and bool(after['source_code_hash']))

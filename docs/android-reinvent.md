@@ -98,3 +98,20 @@ fuera del workflow de Android.
 Referencias: [Capacitor Android](https://capacitorjs.com/docs/android),
 [Camera](https://capacitorjs.com/docs/apis/camera),
 [Barcode Scanner](https://capacitorjs.com/docs/apis/barcode-scanner).
+
+## Beta compilada y verificada · 16 de octubre de 2026
+
+- Commit del APK: `0b1bad220469c1aba13169e093d9d3e424e8872f`.
+- [Compilación exitosa y lint](https://github.com/Pabloin/AWS-Nerdearla-2026-Communid-app/actions/runs/38929980349).
+- [Descargar artefacto de la beta](https://github.com/Pabloin/AWS-Nerdearla-2026-Communid-app/actions/runs/38929980349/artifacts/12058493313).
+- ZIP: aproximadamente 30 MB; APK sin comprimir: 42.817.851 bytes.
+- SHA-256 del APK: `5e1d054d30decdcc1c7cebb230dbe7da0fb2eaa9b0ed48edb486e825747a3699`.
+
+Pasaron 54 pruebas automáticas y los builds web de los tres frontends.
+Se inspeccionó el APK en memoria para comprobar su application ID, interfaz
+local empaquetada, API de re:Invent, HTTP nativo y estilos de área segura.
+El tenant respondió saludable con `eventId=reinvent-2026`. No se instaló un SDK
+ni un emulador en la Mac; las pruebas con cámara y QR en hardware siguen pendientes.
+
+El artefacto de Actions se conserva 30 días. Descargar y descomprimir el ZIP
+para obtener `comunid-reinvent-0.1.0-debug.apk` e instalarlo en Android.
